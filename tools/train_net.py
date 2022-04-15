@@ -110,6 +110,7 @@ def train_epoch(
 
         # Update the parameters.
         optimizer.step()
+        # print('test')
 
         top1_err, top5_err = None, None
         if cfg.DATA.MULTI_LABEL:
