@@ -26,7 +26,7 @@
 
 数据路径：
 
-/mnt/lustreold/share_data/sunweixuan/video_data
+/mnt/lustreold/share_data/sunweixuan/video_data(kinect400, kinect600, somethingsomething v2)
 
 运行：
 
