@@ -32,4 +32,5 @@
 
 bash train.sh M3T 2 10 
 
+在train.sh里配置对应的的yaml和数据集路径。
 

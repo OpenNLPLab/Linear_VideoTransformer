@@ -12,4 +12,3 @@ python tools/run_net.py \
   DATA.PATH_TO_DATA_DIR /mnt/lustreold/share_data/sunweixuan/video_data/kinect400/ \
   NUM_GPUS $GPU
 "
-
