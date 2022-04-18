@@ -213,7 +213,7 @@ _C.DATA = CfgNode()
 _C.DATA.PATH_TO_DATA_DIR = ""
 
 # The separator used between path and label.
-_C.DATA.PATH_LABEL_SEPARATOR = ","
+_C.DATA.PATH_LABEL_SEPARATOR = " "
 
 # Video path prefix if any.
 _C.DATA.PATH_PREFIX = ""
