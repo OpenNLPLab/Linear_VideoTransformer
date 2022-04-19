@@ -14,3 +14,4 @@ pip install tensorboard
 pip install pytorchvideo
 pip install timm==0.4.12
 pip install $dir/detectron2-0.6+cu101-cp38-cp38-linux_x86_64.whl
+pip install sklearn
