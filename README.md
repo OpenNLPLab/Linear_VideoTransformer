@@ -6,7 +6,7 @@
 - cuda: 10.1
 - Numpy
 - PyTorch = 1.8.1 (这里下载：https://download.pytorch.org/whl/cu101/torch-1.8.1%2Bcu101-cp38-cp38-linux_x86_64.whl)
-- hdf5
+- hdf5 (pip install h5py=3.6.0 )
 - fvcore: pip install 'git+https://github.com/facebookresearch/fvcore'
 - torchvision = 0.9.1 （这里下载：https://download.pytorch.org/whl/cu101/torchvision-0.9.1%2Bcu101-cp38-cp38-linux_x86_64.whl）
 - simplejson: pip install simplejson
@@ -27,7 +27,8 @@
 数据路径：
 
 1986集群：   /mnt/lustreold/share_data/sunweixuan/video_data(kinect400, kinect600, somethingsomething v2)
-1024集群：  
+
+1024集群：   /mnt/lustre/share_data/sunweixuan/video_data
 
 运行：
 
