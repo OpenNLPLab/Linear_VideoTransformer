@@ -40,7 +40,9 @@
 
 运行：
 
-bash train.sh M3T 8
+bash train_k600.sh M3T 8 
+
+bash train_k400.sh M3T 8 
 
 在train.sh里配置对应的的yaml和数据集路径。
 
