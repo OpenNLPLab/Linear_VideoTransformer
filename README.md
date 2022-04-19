@@ -24,6 +24,8 @@
 - detectron2: (这里下载： https://dl.fbaipublicfiles.com/detectron2/wheels/cu101/torch1.8/detectron2-0.6%2Bcu101-cp38-cp38-linux_x86_64.whl)
 - (以上whl文件下载了传上集群再pip install)
 
+备注：可以使用install.sh安装(1986集群, 1024需要修改)
+
 数据路径：
 
 1986集群：   /mnt/lustreold/share_data/sunweixuan/video_data(kinect400, kinect600, somethingsomething v2)
