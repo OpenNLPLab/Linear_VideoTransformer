@@ -333,6 +333,7 @@ class Kinetics(torch.utils.data.Dataset):
                         self.cfg.DATA_LOADER.ENABLE_MULTI_THREAD_DECODE,
                         self.cfg.DATA.DECODING_BACKEND,
                     )
+                    # print('loaded!!!!!')
                 except Exception as e:
                     logger.info(
                         "Failed to load video from {} with error {}".format(
@@ -342,7 +343,7 @@ class Kinetics(torch.utils.data.Dataset):
                 # Select a random video if the current video was not able to access.
                 if video_container is None:
                     logger.warning(
-                        "Failed to meta load video idx {} from {}; trial {}".format(
+                        "Failed to meta load video idx {} from {}; trial {}(video container none)".format(
                             index, self._path_to_videos[index], i_try
                         )
                     )
@@ -355,23 +356,29 @@ class Kinetics(torch.utils.data.Dataset):
                     continue
 
                 # Decode video. Meta info is used to perform selective decoding.
-                frames, frames_index = decoder.decode(
-                    video_container,
-                    sampling_rate,
-                    self.cfg.DATA.NUM_FRAMES,
-                    temporal_sample_index,
-                    self.cfg.TEST.NUM_ENSEMBLE_VIEWS,
-                    video_meta=self._video_meta[index],
-                    target_fps=self.cfg.DATA.TARGET_FPS,
-                    backend=self.cfg.DATA.DECODING_BACKEND,
-                    max_spatial_scale=min_scale,
-                )
+                try:
+                    frames, frames_index = decoder.decode(
+                        video_container,
+                        sampling_rate,
+                        self.cfg.DATA.NUM_FRAMES,
+                        temporal_sample_index,
+                        self.cfg.TEST.NUM_ENSEMBLE_VIEWS,
+                        video_meta=self._video_meta[index],
+                        target_fps=self.cfg.DATA.TARGET_FPS,
+                        backend=self.cfg.DATA.DECODING_BACKEND,
+                        max_spatial_scale=min_scale,
+                    )
+                except:
+                    
+                    index = random.randint(0, len(self._path_to_videos) - 1)
+                    continue
+
 
             # If decoding failed (wrong format, video is too short, and etc),
             # select another video.
             if frames is None:
                 logger.warning(
-                    "Failed to decode video idx {} from {}; trial {}".format(
+                    "Failed to decode video idx {} from {}; trial {}(frames none)".format(
                         index, self._path_to_videos[index], i_try
                     )
                 )
@@ -392,6 +399,7 @@ class Kinetics(torch.utils.data.Dataset):
                     frames = [
                         Image.fromarray(fmr.astype("uint8")) for fmr in frames
                     ]
+                    # print('length:', len(frames))
 
                 if self.auto_augment is not None:
                     frames = self.auto_augment(frames)
@@ -463,6 +471,7 @@ class Kinetics(torch.utils.data.Dataset):
 
             label = self._labels[index]
             frames = utils.pack_pathway_output(self.cfg, frames, frames_index)
+            # print('frames shape:', frames[0].shape)
 
             return frames, label, index, {}
         else:

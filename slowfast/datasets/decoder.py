@@ -351,6 +351,7 @@ def decode(
 
     # Return None if the frames was not decoded successfully.
     if frames is None or frames.size(0) == 0:
+        print('here!!!!')
         return None
 
     clip_sz = sampling_rate * num_frames / target_fps * fps
@@ -364,4 +365,5 @@ def decode(
     frames, frames_index = temporal_sampling(
         frames, start_idx, end_idx, num_frames
     )
+    # print(frames, frames_index)
     return frames, frames_index

@@ -26,11 +26,12 @@
 
 数据路径：
 
-/mnt/lustreold/share_data/sunweixuan/video_data(kinect400, kinect600, somethingsomething v2)
+/mnt/lustreold/share_data/sunweixuan/video_data (kinect400, kinect600, somethingsomething v2)
+
 
 运行：
 
-bash train.sh M3T 2 10 
+bash train.sh M3T 8
 
 在train.sh里配置对应的的yaml和数据集路径。
 

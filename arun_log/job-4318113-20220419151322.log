@@ -1,0 +1,5 @@
+srun: Job step aborted: Waiting up to 2 seconds for job step to finish.
+slurmstepd: *** JOB 4318113 ON SH-IDC1-10-198-6-110 CANCELLED AT 2022-04-19T15:13:48 ***
+srun: got SIGCONT
+srun: forcing job termination
+slurmstepd: *** STEP 4318113.0 ON SH-IDC1-10-198-6-110 CANCELLED AT 2022-04-19T15:13:48 ***
