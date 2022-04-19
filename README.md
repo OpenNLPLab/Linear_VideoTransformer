@@ -28,9 +28,15 @@
 
 数据路径：
 
-1986集群：   /mnt/lustreold/share_data/sunweixuan/video_data(kinect400, kinect600, somethingsomething v2)
+1986集群：   
 
-1024集群：   /mnt/lustre/share_data/sunweixuan/video_data
+/mnt/lustreold/share_data/sunweixuan/video_data (kinect400, kinect600, somethingsomething v2)
+
+/mnt/lustre/share_data/sunweixuan/video_data (ava  charades  kinect700)
+
+1024集群：  
+
+ /mnt/lustre/share_data/sunweixuan/video_data (somethingsomething v2)
 
 运行：
 
