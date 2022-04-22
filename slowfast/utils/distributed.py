@@ -80,6 +80,7 @@ def init_process_group(
             https://pytorch.org/docs/stable/distributed.html
     """
     # Sets the GPU to use.
+    assert _LOCAL_PROCESS_GROUP is not None
     torch.cuda.set_device(local_rank)
     # Initialize the process group.
     proc_rank = local_rank + shard_id * local_world_size
@@ -239,6 +240,7 @@ def all_gather_unaligned(data, group=None):
     Returns:
         list[data]: list of data gathered from each rank
     """
+    assert _LOCAL_PROCESS_GROUP is not None
     if get_world_size() == 1:
         return [data]
     if group is None:
@@ -290,6 +292,7 @@ def get_local_size() -> int:
         The size of the per-machine process group,
         i.e. the number of processes per machine.
     """
+    assert _LOCAL_PROCESS_GROUP is not None
     if not dist.is_available():
         return 1
     if not dist.is_initialized():

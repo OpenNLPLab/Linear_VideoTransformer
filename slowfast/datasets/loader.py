@@ -24,6 +24,7 @@ def construct_loader(cfg, split, is_precise_bn=False):
         split (str): the split of the data loader. Options include `train`,
             `val`, and `test`.
     """
+
     assert split in ["train", "val", "test"]
     if split in ["train"]:
         dataset_name = cfg.TRAIN.DATASET
@@ -42,7 +43,6 @@ def construct_loader(cfg, split, is_precise_bn=False):
         drop_last = False
 
     # Construct the dataset
-    print('loader 45')
     dataset = build_dataset(dataset_name, cfg, split)
 
     if isinstance(dataset, torch.utils.data.IterableDataset):

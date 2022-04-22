@@ -248,7 +248,7 @@ def visualize(cfg):
         or cfg.TENSORBOARD.WRONG_PRED_VIS.ENABLE
     ):
         # Set up environment.
-        du.init_distributed_training(cfg)
+        utils.init_distributed_mode(cfg) #du.init_distributed_training(cfg)
         # Set random seed from configs.
         np.random.seed(cfg.RNG_SEED)
         torch.manual_seed(cfg.RNG_SEED)
@@ -261,9 +261,9 @@ def visualize(cfg):
         logger.info(cfg)
 
         # Build the video model and print model statistics.
-        model = build_model(cfg)
+        model = build_model(cfg, gpu_id=cfg.local_rank)
         model.eval()
-        if du.is_master_proc() and cfg.LOG_MODEL_INFO:
+        if utils.is_main_process() and cfg.LOG_MODEL_INFO:
             misc.log_model_info(model, cfg, use_train_input=False)
 
         cu.load_test_checkpoint(cfg, model)
@@ -272,7 +272,7 @@ def visualize(cfg):
         vis_loader = loader.construct_loader(cfg, "test")
 
         # Set up writer for logging to Tensorboard format.
-        if du.is_master_proc(cfg.NUM_GPUS * cfg.NUM_SHARDS):
+        if utils.is_main_process():
             writer = tb.TensorboardWriter(cfg)
         else:
             writer = None

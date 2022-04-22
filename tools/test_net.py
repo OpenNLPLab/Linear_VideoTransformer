@@ -5,7 +5,9 @@
 
 import os
 import pickle
-
+import pdb
+import utils
+import random
 import numpy as np
 import slowfast.utils.checkpoint as cu
 import slowfast.utils.distributed as du
@@ -85,7 +87,8 @@ def perform_test(test_loader, model, test_meter, cfg, writer=None):
         test_meter.update_stats(
             preds.detach(), labels.detach(), video_idx.detach()
         )
-        test_meter.log_iter_stats(cur_iter)
+        if utils.is_main_process():
+            test_meter.log_iter_stats(cur_iter)
 
         test_meter.iter_tic()
 
@@ -120,7 +123,7 @@ def test(cfg):
             slowfast/config/defaults.py
     """
     # Set up environment.
-    du.init_distributed_training(cfg)
+    utils.init_distributed_mode(cfg) #du.init_distributed_training(cfg)
     # Set random seed from configs.
     np.random.seed(cfg.RNG_SEED)
     torch.manual_seed(cfg.RNG_SEED)
@@ -133,8 +136,8 @@ def test(cfg):
     logger.info(cfg)
 
     # Build the video model and print model statistics.
-    model = build_model(cfg)
-    if du.is_master_proc() and cfg.LOG_MODEL_INFO:
+    model = build_model(cfg, gpu_id=cfg.local_rank)
+    if utils.is_main_process() and cfg.LOG_MODEL_INFO:
         misc.log_model_info(model, cfg, use_train_input=False)
 
     cu.load_test_checkpoint(cfg, model)
@@ -160,9 +163,7 @@ def test(cfg):
     )
 
     # Set up writer for logging to Tensorboard format.
-    if cfg.TENSORBOARD.ENABLE and du.is_master_proc(
-        cfg.NUM_GPUS * cfg.NUM_SHARDS
-    ):
+    if cfg.TENSORBOARD.ENABLE and utils.is_main_process():
         writer = tb.TensorboardWriter(cfg)
     else:
         writer = None

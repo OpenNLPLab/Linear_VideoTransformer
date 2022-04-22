@@ -54,6 +54,11 @@ def parse_args():
         type=str,
     )
     parser.add_argument(
+        "--port",
+        default=23233,
+        type=int
+    )
+    parser.add_argument(
         "opts",
         help="See slowfast/config/defaults.py for all options",
         default=None,
@@ -88,7 +93,8 @@ def load_config(args):
         cfg.RNG_SEED = args.rng_seed
     if hasattr(args, "output_dir"):
         cfg.OUTPUT_DIR = args.output_dir
-
+    if hasattr(args, "port"):
+        cfg.port = args.port
     # Create the checkpoint dir.
     cu.make_checkpoint_dir(cfg.OUTPUT_DIR)
     return cfg

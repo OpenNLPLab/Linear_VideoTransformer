@@ -8,8 +8,10 @@
 """Train a video classification model."""
 
 import pprint
-
+import pdb
+import utils
 import numpy as np
+import random
 import slowfast.models.losses as losses
 import slowfast.models.optimizer as optim
 import slowfast.utils.checkpoint as cu
@@ -161,11 +163,13 @@ def train_epoch(
             )
 
         train_meter.iter_toc()  # measure allreduce for this meter
-        train_meter.log_iter_stats(cur_epoch, cur_iter)
+        if utils.is_main_process():
+            train_meter.log_iter_stats(cur_epoch, cur_iter)
         train_meter.iter_tic()
 
     # Log epoch stats.
-    train_meter.log_epoch_stats(cur_epoch)
+    if utils.is_main_process():
+        train_meter.log_epoch_stats(cur_epoch)
     train_meter.reset()
 
 
@@ -246,12 +250,13 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
                 )
 
         val_meter.update_predictions(preds, labels)
-
-        val_meter.log_iter_stats(cur_epoch, cur_iter)
+        if utils.is_main_process():
+            val_meter.log_iter_stats(cur_epoch, cur_iter)
         val_meter.iter_tic()
 
     # Log epoch stats.
-    val_meter.log_epoch_stats(cur_epoch)
+    if utils.is_main_process():
+        val_meter.log_epoch_stats(cur_epoch)
     # write to tensorboard format if available.
     if writer is not None:
         all_preds = [pred.clone().detach() for pred in val_meter.all_preds]
@@ -344,12 +349,15 @@ def train(cfg):
         cfg (CfgNode): configs. Details can be found in
             slowfast/config/defaults.py
     """
-    print('haha')
     # Set up environment.
-    du.init_distributed_training(cfg)
+    utils.init_distributed_mode(cfg)
+    # fix the seed for reproducibility
+    seed = cfg.RNG_SEED + utils.get_rank()
+    random.seed(seed)
+    #du.init_distributed_training(cfg)
     # Set random seed from configs.
-    np.random.seed(cfg.RNG_SEED)
-    torch.manual_seed(cfg.RNG_SEED)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
 
     # Setup logging format.
     logging.setup_logging(cfg.OUTPUT_DIR)
@@ -359,8 +367,8 @@ def train(cfg):
     logger.info(pprint.pformat(cfg))
 
     # Build the video model and print model statistics.
-    model = build_model(cfg)
-    if du.is_master_proc() and cfg.LOG_MODEL_INFO:
+    model = build_model(cfg, gpu_id=cfg.local_rank)
+    if utils.is_main_process() and cfg.LOG_MODEL_INFO:
         misc.log_model_info(model, cfg, use_train_input=True)
 
     # Construct the optimizer.
@@ -377,6 +385,7 @@ def train(cfg):
     # Create the video train and val loaders.
     train_loader = loader.construct_loader(cfg, "train")
     val_loader = loader.construct_loader(cfg, "val")
+
     precise_bn_loader = (
         loader.construct_loader(cfg, "train", is_precise_bn=True)
         if cfg.BN.USE_PRECISE_STATS
@@ -388,9 +397,10 @@ def train(cfg):
     val_meter = ValMeter(len(val_loader), cfg)
 
     # set up writer for logging to Tensorboard format.
-    if cfg.TENSORBOARD.ENABLE and du.is_master_proc(
-        cfg.NUM_GPUS * cfg.NUM_SHARDS
-    ):
+    # if cfg.TENSORBOARD.ENABLE and du.is_master_proc(
+    #     cfg.NUM_GPUS * cfg.NUM_SHARDS
+    # ):
+    if cfg.TENSORBOARD.ENABLE and utils.is_master_proc():
         writer = tb.TensorboardWriter(cfg)
     else:
         writer = None
