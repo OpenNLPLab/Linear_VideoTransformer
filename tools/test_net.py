@@ -115,7 +115,7 @@ def perform_test(test_loader, model, test_meter, cfg, writer=None):
     return test_meter
 
 
-def test(cfg):
+def test(cfg, is_init=False):
     """
     Perform multi-view testing on the pretrained video model.
     Args:
@@ -123,7 +123,8 @@ def test(cfg):
             slowfast/config/defaults.py
     """
     # Set up environment.
-    utils.init_distributed_mode(cfg) #du.init_distributed_training(cfg)
+    if not is_init:
+        utils.init_distributed_mode(cfg) #du.init_distributed_training(cfg)
     # Set random seed from configs.
     np.random.seed(cfg.RNG_SEED)
     torch.manual_seed(cfg.RNG_SEED)

@@ -26,11 +26,12 @@ def main():
     """
     args = parse_args()
     cfg = load_config(args)
-
+    is_init = False
     if cfg.TRAIN.ENABLE:
         train(cfg)
+        is_init = True
     if cfg.TEST.ENABLE:
-        test(cfg)
+        test(cfg, is_init=is_init)
     if cfg.TENSORBOARD.ENABLE and (
         cfg.TENSORBOARD.MODEL_VIS.ENABLE
         or cfg.TENSORBOARD.WRONG_PRED_VIS.ENABLE

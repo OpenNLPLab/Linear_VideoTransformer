@@ -21,6 +21,7 @@ def _get_optim_policies_TSN(model, cfg):
     conv_cnt = 0
     bn_cnt = 0
     for m in model.modules():
+
         if (
             isinstance(m, torch.nn.Conv2d)
             or isinstance(m, torch.nn.Conv1d)
@@ -127,6 +128,7 @@ def construct_optimizer(model, cfg):
         "deit" in cfg.XVIT.BASE_MODEL
         or "vit" in cfg.XVIT.BASE_MODEL
         or "swin" in cfg.XVIT.BASE_MODEL
+        or "pvt" in cfg.XVIT.BASE_MODEL
     ):
         optim_params = _get_optim_policies_TSN(model, cfg)
     else:

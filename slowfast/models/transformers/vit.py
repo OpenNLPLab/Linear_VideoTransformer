@@ -183,6 +183,8 @@ class VisionTransformer(nn.Module):
         drop_path_rate=0.0,
         hybrid_backbone=None,
         norm_layer=None,
+        linear_attention=False,
+        attention_type=None
     ):
         """
         Args:
@@ -204,6 +206,7 @@ class VisionTransformer(nn.Module):
             norm_layer: (nn.Module): normalization layer
         """
         super().__init__()
+        self.linear_attention = linear_attention
         self.num_classes = num_classes
         self.num_features = (
             self.embed_dim
@@ -232,7 +235,8 @@ class VisionTransformer(nn.Module):
         self.pos_embed = nn.Parameter(
             torch.zeros(1, num_patches + 1, embed_dim)
         )
-        self.temp_embed = nn.Parameter(torch.zeros(1, num_frames, 1, embed_dim))
+        if not self.linear_attention:
+            self.temp_embed = nn.Parameter(torch.zeros(1, num_frames, 1, embed_dim))
         self.pos_drop = nn.Dropout(p=drop_rate)
 
         control_flags = [True for _ in range(depth)]
@@ -252,6 +256,7 @@ class VisionTransformer(nn.Module):
                     drop_path=dpr[i],
                     norm_layer=norm_layer,
                     insert_control_point=control_flags[i],
+                    linear_attention=self.linear_attention
                 )
                 for i in range(depth)
             ]
@@ -307,7 +312,7 @@ class VisionTransformer(nn.Module):
             else nn.Identity()
         )
 
-    def forward_features(self, x):
+    def forward_features(self, x, num_frames=None):
         B = x.shape[0]
         x = self.patch_embed(x)
 
@@ -339,26 +344,27 @@ class VisionTransformer(nn.Module):
 
         x = x + new_pos_embed
         x = self.pos_drop(x)
-        x = (
-            x.view(
-                x.size(0) // self.num_frames,
-                self.num_frames,
-                x.size(1),
-                x.size(2),
+        if not self.linear_attention:
+            x = (
+                x.view(
+                    x.size(0) // self.num_frames,
+                    self.num_frames,
+                    x.size(1),
+                    x.size(2),
+                )
+                + self.temp_embed
             )
-            + self.temp_embed
-        )
-        x = x.view(-1, x.size(2), x.size(3))
+            x = x.view(-1, x.size(2), x.size(3))
 
         for idx, blk in enumerate(self.blocks):
-            x = blk(x)
+            x = blk(x, num_frames)
 
         x = self.norm(x)[:, 0]
         x = self.pre_logits(x)
         return x
 
-    def forward(self, x):
-        x = self.forward_features(x)
+    def forward(self, x, num_frames=None):
+        x = self.forward_features(x, num_frames)
         x = self.head(x)
         return x
 

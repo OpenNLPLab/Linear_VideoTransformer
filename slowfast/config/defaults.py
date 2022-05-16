@@ -34,6 +34,10 @@ _C.BN.NUM_SPLITS = 1
 # devices will be synchronized.
 _C.BN.NUM_SYNC_DEVICES = 1
 
+####new setting
+_C.NO_RESHAPE = False
+_C.USE_LINEARv1 = False
+_C.ATTENTION_TYPE = 'full_time_space'
 
 # ---------------------------------------------------------------------------- #
 # Training options.

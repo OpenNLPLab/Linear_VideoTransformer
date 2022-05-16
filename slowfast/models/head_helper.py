@@ -15,8 +15,8 @@ class VitHead(nn.Module):
 
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
 
-        self.temporal_encoder = nn.Sequential(
-            *[
+        self.temporal_encoder = nn.ModuleList(
+            [
                 Block(
                     dim=embed_dim,
                     num_heads=cfg.TEMPORAL_HEAD.NUM_ATTENTION_HEADS,
@@ -37,15 +37,16 @@ class VitHead(nn.Module):
             nn.Linear(cfg.TEMPORAL_HEAD.MLP_DIM, cfg.MODEL.NUM_CLASSES),
         )
 
-    def forward(self, x, position_ids):
+    def forward(self, x, position_ids, num_frames):
         # temporal encoder (Longformer)
         B, D, E = x.shape
-
         cls_tokens = self.cls_token.expand(
             B, -1, -1
         )  # stole cls_tokens impl from Phil Wang, thanks
         x = torch.cat((cls_tokens, x), dim=1)
-        x = self.temporal_encoder(x)
+        #x = self.temporal_encoder(x, num_frames)
+        for block in self.temporal_encoder:
+            x = block(x, num_frames)
         # MLP head
         x = self.mlp_head(x[:, 0])
         return x

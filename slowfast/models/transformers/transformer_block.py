@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from timm.models.layers import DropPath
 from torch import einsum
 from torch import nn as nn
-
+from einops import rearrange
 
 class AfterReconstruction(nn.Identity):
     def __init__(self, inplanes):
@@ -73,7 +73,7 @@ class Attention(nn.Module):
             self.control_point_query = AfterReconstruction(dim)
             self.control_point_value = AfterReconstruction(dim)
 
-    def forward(self, x):
+    def forward(self, x, num_frames):
         if self.insert_control_point:
             x = self.control_point(x)
         B, N, C = x.shape
@@ -99,6 +99,109 @@ class Attention(nn.Module):
         return x
 
 
+class LinearAttention(nn.Module):
+    def __init__(
+            self,
+            dim,
+            num_heads=8,
+            qkv_bias=False,
+            qk_scale=None,
+            attn_drop=0.0,
+            proj_drop=0.0,
+            insert_control_point=False,
+            # ADD FOR ORPE
+            use_orpe=False,
+            core_matrix=1,
+            p_matrix=3,
+            theta_type="a",
+            theta_learned=True,
+            householder_learned=False,
+            orpe_dim=1,
+    ):
+        super().__init__()
+        self.num_heads = num_heads
+        head_dim = dim // num_heads
+
+        self.insert_control_point = insert_control_point
+        self.scale = qk_scale or head_dim ** -0.5
+
+        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
+        self.attn_drop = nn.Dropout(attn_drop)
+        self.proj = nn.Linear(dim, dim)
+        self.proj_drop = nn.Dropout(proj_drop)
+
+        self.n_segment = 8
+
+        self.use_orpe = use_orpe
+        if self.use_orpe:
+            print("===================")
+            print("use_orpe")
+            self.orpe = Orpe(core_matrix, p_matrix, embedding_dim=head_dim,
+                             theta_type=theta_type, theta_learned=theta_learned,
+                             householder_learned=householder_learned, dim=orpe_dim)
+
+    def abs_clamp(self, t):
+        min_mag = 1e-4
+        max_mag = 10000
+        sign = t.sign()
+        return t.abs_().clamp_(min_mag, max_mag) * sign
+
+    def forward(self, x, num_frames):
+        """
+        intput shape: (b * f), (w * h), c
+        """
+        B, N, C = x.shape
+        # qkv = (
+        #     self.qkv(x)
+        #     .reshape(B, N, 3, self.num_heads, C // self.num_heads)
+        #     .permute(2, 0, 1, 3, 4)
+        # )
+        # split to qkv
+        qkv = rearrange(self.qkv(x), 'b n (k c) -> k b n c', k=3)
+        # split to multi head
+        qkv = rearrange(qkv, 'k b n (h e) -> k b n h e', h=self.num_heads)
+        # b, n, h, e
+        q, k, v = qkv[0], qkv[1], qkv[2]
+        # act
+        q_ = F.relu(q)
+        k_ = F.relu(k)
+        # reshape
+        q_ = rearrange(q_, '(b f) n h e -> b f n h e', f=num_frames)
+        k_ = rearrange(k_, '(b f) n h e -> b f n h e', f=num_frames)
+        v_ = rearrange(v, '(b f) n h e -> b f n h e', f=num_frames)
+        if self.use_orpe:
+            q_ = self.orpe(q_)
+            k_ = self.orpe(k_)
+        q_ = rearrange(q_, 'b f n h e -> b (f n) h e')
+        k_ = rearrange(k_, 'b f n h e -> b (f n) h e')
+        v_ = rearrange(v_, 'b f n h e -> b (f n) h e')
+
+        ##### compute
+        eps = 1e-4
+        # b h n e, b h e n -> b h e e
+        kv_ = torch.matmul(rearrange(k_, 'b n h e -> b h e n'),
+                           rearrange(v_, 'b n h e -> b h n e'))
+
+        # 分母
+        # b n h e -> b 1 h e
+        k_sum = torch.sum(k_, axis=1, keepdim=True)
+        # b n h e, b 1 h e -> b n h e
+        z_ = 1 / (torch.sum(torch.mul(q_, k_sum), axis=-1) + eps)
+
+        attn_output = torch.matmul(q_.transpose(1, 2), kv_).transpose(1, 2)
+        attn_output = torch.mul(attn_output, z_.unsqueeze(-1))
+
+        # reshape
+        attn_output = rearrange(attn_output, 'b (f n) h e -> b f n h e', f=num_frames)
+        attn_output = rearrange(attn_output, 'b f n h e -> (b f) n (h e)')
+
+        # outprojection
+        attn_output = self.proj(attn_output)
+        attn_output = self.proj_drop(attn_output)
+
+        return attn_output
+
+
 class Block(nn.Module):
     def __init__(
         self,
@@ -113,19 +216,30 @@ class Block(nn.Module):
         act_layer=nn.GELU,
         norm_layer=nn.LayerNorm,
         insert_control_point=False,
+        linear_attention=False
     ):
         super().__init__()
         self.insert_control_point = insert_control_point
         self.norm1 = norm_layer(dim)
-        self.attn = Attention(
-            dim,
-            num_heads=num_heads,
-            qkv_bias=qkv_bias,
-            qk_scale=qk_scale,
-            attn_drop=attn_drop,
-            proj_drop=drop,
-            insert_control_point=insert_control_point,
-        )
+        if not linear_attention:
+            self.attn = Attention(
+                dim,
+                num_heads=num_heads,
+                qkv_bias=qkv_bias,
+                qk_scale=qk_scale,
+                attn_drop=attn_drop,
+                proj_drop=drop,
+                insert_control_point=insert_control_point,
+            )
+        else:
+            self.attn = LinearAttention(
+                dim,
+                num_heads=num_heads,
+                qkv_bias=qkv_bias,
+                qk_scale=qk_scale,
+                attn_drop=attn_drop,
+                proj_drop=drop,
+            )
         self.drop_path = (
             DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
         )
@@ -138,8 +252,8 @@ class Block(nn.Module):
             drop=drop,
         )
 
-    def forward(self, x):
-        x = x + self.drop_path(self.attn(self.norm1(x)))
+    def forward(self, x, num_frames):
+        x = x + self.drop_path(self.attn(self.norm1(x), num_frames))
         x = x + self.drop_path(self.mlp(self.norm2(x)))
 
         return x

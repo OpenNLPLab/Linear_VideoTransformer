@@ -91,7 +91,7 @@ class XVIT(nn.Module):
 
     def _prepare_base_model(self, base_model):
         print("=> base model: {}".format(base_model))
-        if "deit" in base_model or "vit" in base_model:
+        if "deit" in base_model or "vit" in base_model or 'pvt' in base_model:
 
             if self.cfg.XVIT.BACKBONE.NORM_LAYER == "LN":
                 norm_layer = partial(nn.LayerNorm, eps=1e-6)
@@ -118,7 +118,8 @@ class XVIT(nn.Module):
                 drop_block_rate=None,
                 norm_layer=norm_layer,
                 global_pool=None,
-                bn_tf=False, 
+                bn_tf=False,
+                attention_type=self.cfg.ATTENTION_TYPE
             )
 
             if self.cfg.XVIT.USE_XVIT:
@@ -159,7 +160,7 @@ class XVIT(nn.Module):
                 input = torch.transpose(input, 1, 2).contiguous()
                 input = input.view((-1, sample_len) + input.size()[-2:])
 
-            base_out = self.base_model(input)
+            base_out = self.base_model(input, num_frames=self.cfg.DATA.NUM_FRAMES)
 
             if isinstance(base_out, tuple):
                 base_out = base_out[0]
@@ -178,7 +179,7 @@ class XVIT(nn.Module):
 
         if self.cfg.XVIT.CONSENSUS_TYPE == "vit":
             base_out = base_out.view(B, F, -1)
-            output = self.consensus(base_out, positional_index)
+            output = self.consensus(base_out, positional_index, self.cfg.DATA.NUM_FRAMES)
             return output
 
         # return base_out

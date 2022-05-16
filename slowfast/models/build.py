@@ -22,15 +22,6 @@ def build_model(cfg, gpu_id=None):
         backbone. Details can be seen in slowfast/config/defaults.py.
         gpu_id (Optional[int]): specify the gpu index to build model.
     """
-    if torch.cuda.is_available():
-        assert (
-            cfg.NUM_GPUS <= torch.cuda.device_count()
-        ), "Cannot use more GPU devices than available"
-    else:
-        assert (
-            cfg.NUM_GPUS == 0
-        ), "Cuda is not available. Please set `NUM_GPUS: 0 for running on CPUs."
-
     # Construct the model
     name = cfg.MODEL.MODEL_NAME
     print('model name:', name)
