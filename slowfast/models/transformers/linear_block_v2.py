@@ -389,7 +389,8 @@ class LinearBlock(nn.Module):
             householder_learned=False,
             orpe_dim=1,
             has_kv=False,
-            attention_type='full_time_space'
+            attention_type='full_time_space',
+            insert_control_point=False
     ):
         super().__init__()
         self.norm1 = norm_layer(dim)
@@ -427,6 +428,7 @@ class LinearBlock(nn.Module):
                 theta_learned=theta_learned,
                 householder_learned=householder_learned,
                 orpe_dim=orpe_dim,
+                insert_control_point=insert_control_point,
             )
             self.temporal_norm1 = norm_layer(dim)
             self.temporal_attn = Attention(
@@ -478,8 +480,12 @@ class LinearBlock(nn.Module):
 
     def forward(self, x, H, W, num_frames):
         T = num_frames
-        if self.attention_type == 'full_time_space' or self.attention_type == 'xvit':
+        if self.attention_type == 'full_time_space':
             x = x + self.drop_path(self.attn(self.norm1(x), num_frames))
+            x = x + self.drop_path(self.mlp(self.norm2(x), H, W))
+            return x
+        elif self.attention_type == 'xvit':
+            x = x + self.drop_path(self.attn(self.norm1(x)))
             x = x + self.drop_path(self.mlp(self.norm2(x), H, W))
             return x
         elif self.attention_type == 'divided_time_space':

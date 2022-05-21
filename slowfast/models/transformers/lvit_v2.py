@@ -125,7 +125,7 @@ class LinearChangeVisionTransformer(nn.Module):
         has_kv=False,
         stride=12,
         linear_attention=None,
-        attention_type='full_time_space'
+        attention_type='full_time_space',
     ):
         """
         Args:
@@ -197,7 +197,8 @@ class LinearChangeVisionTransformer(nn.Module):
                     drop_path=dpr[i],
                     norm_layer=norm_layer,
                     has_kv=has_kv,
-                    attention_type=attention_type
+                    attention_type=attention_type,
+                    insert_control_point=True
                 )
                 for i in range(depth)
             ]

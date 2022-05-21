@@ -65,5 +65,5 @@ DATA_LOADER:
 NUM_GPUS: 8
 NUM_SHARDS: 1
 RNG_SEED: 0
-OUTPUT_DIR: /mnt/lustre/liuzexiang/cache_output/xvit/ssv2/vit_linearv2_xvit
-ATTENTION_TYPE: xvit
+OUTPUT_DIR: output/lv2_dts_vit_St
+ATTENTION_TYPE: divided_time_space

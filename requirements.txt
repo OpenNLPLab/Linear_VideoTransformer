@@ -1,3 +1,4 @@
 sklearn
 timm==0.4.12
 h5py
+einops
