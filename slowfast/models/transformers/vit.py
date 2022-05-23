@@ -235,8 +235,8 @@ class VisionTransformer(nn.Module):
         self.pos_embed = nn.Parameter(
             torch.zeros(1, num_patches + 1, embed_dim)
         )
-        if not self.linear_attention:
-            self.temp_embed = nn.Parameter(torch.zeros(1, num_frames, 1, embed_dim))
+
+        self.temp_embed = nn.Parameter(torch.zeros(1, num_frames, 1, embed_dim))
         self.pos_drop = nn.Dropout(p=drop_rate)
 
         control_flags = [True for _ in range(depth)]
@@ -344,17 +344,17 @@ class VisionTransformer(nn.Module):
 
         x = x + new_pos_embed
         x = self.pos_drop(x)
-        if not self.linear_attention:
-            x = (
-                x.view(
-                    x.size(0) // self.num_frames,
-                    self.num_frames,
-                    x.size(1),
-                    x.size(2),
-                )
-                + self.temp_embed
+
+        x = (
+            x.view(
+                x.size(0) // self.num_frames,
+                self.num_frames,
+                x.size(1),
+                x.size(2),
             )
-            x = x.view(-1, x.size(2), x.size(3))
+            + self.temp_embed
+        )
+        x = x.view(-1, x.size(2), x.size(3))
 
         for idx, blk in enumerate(self.blocks):
             x = blk(x, num_frames)

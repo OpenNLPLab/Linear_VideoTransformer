@@ -102,7 +102,7 @@ class SimpleRMSNorm(nn.Module):
 
 
 # attention based linear complexity
-class LinearAttention(nn.Module):
+class LinearJointTSAttention(nn.Module):
     def __init__(
             self,
             dim,
@@ -230,7 +230,7 @@ class AfterReconstruction(nn.Identity):
         super().__init__()
         self.inplanes = inplanes
 
-class Attention(nn.Module):
+class LinearAttention(nn.Module):
     def __init__(
             self,
             dim,
@@ -396,7 +396,7 @@ class LinearBlock(nn.Module):
         self.norm1 = norm_layer(dim)
         self.attention_type = attention_type
         if self.attention_type == 'full_time_space':
-            self.attn = LinearAttention(
+            self.attn = LinearJointTSAttention(
                 dim,
                 num_heads=num_heads,
                 qkv_bias=qkv_bias,
@@ -413,7 +413,7 @@ class LinearBlock(nn.Module):
                 orpe_dim=orpe_dim,
             )
         elif self.attention_type == 'divided_time_space':
-            self.attn = Attention(
+            self.attn = LinearAttention(
                 dim,
                 num_heads=num_heads,
                 qkv_bias=qkv_bias,
@@ -431,7 +431,7 @@ class LinearBlock(nn.Module):
                 insert_control_point=insert_control_point,
             )
             self.temporal_norm1 = norm_layer(dim)
-            self.temporal_attn = Attention(
+            self.temporal_attn = LinearAttention(
                 dim,
                 num_heads=num_heads,
                 qkv_bias=qkv_bias,
