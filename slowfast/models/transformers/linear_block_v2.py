@@ -286,11 +286,11 @@ class LinearAttention(nn.Module):
         print(torch.min(x))
         print("=============================")
 
-    def forward(self, x):
+    def forward(self, x, execute=False):
         """
         intput shape: (b * f), (w * h), c
         """
-        if self.insert_control_point:
+        if self.insert_control_point and execute:
             x = self.control_point(x)
         B, N, C = x.shape
         # qkv = (
@@ -304,7 +304,7 @@ class LinearAttention(nn.Module):
         qkv = rearrange(qkv, 'k b n (h e) -> k b n h e', h=self.num_heads)
         # b, n, h, e
         q, k, v = qkv[0], qkv[1], qkv[2]
-        if self.insert_control_point:
+        if self.insert_control_point and execute:
             k = rearrange(k, 'b n h e -> b h n e')
             v = rearrange(v, 'b n h e -> b h n e')
             k = self.control_point_query(k)
@@ -390,9 +390,11 @@ class LinearBlock(nn.Module):
             orpe_dim=1,
             has_kv=False,
             attention_type='full_time_space',
-            insert_control_point=False
+            insert_control_point=False,
+            share_ts_params=False
     ):
         super().__init__()
+        self.share_ts_params = share_ts_params
         self.norm1 = norm_layer(dim)
         self.attention_type = attention_type
         if self.attention_type == 'full_time_space':
@@ -413,41 +415,61 @@ class LinearBlock(nn.Module):
                 orpe_dim=orpe_dim,
             )
         elif self.attention_type == 'divided_time_space':
-            self.attn = LinearAttention(
-                dim,
-                num_heads=num_heads,
-                qkv_bias=qkv_bias,
-                qk_scale=qk_scale,
-                attn_drop=attn_drop,
-                proj_drop=drop,
-                # ADD FOR ORPE
-                use_orpe=use_orpe,
-                core_matrix=core_matrix,
-                p_matrix=p_matrix,
-                theta_type=theta_type,
-                theta_learned=theta_learned,
-                householder_learned=householder_learned,
-                orpe_dim=orpe_dim,
-                insert_control_point=insert_control_point,
-            )
-            self.temporal_norm1 = norm_layer(dim)
-            self.temporal_attn = LinearAttention(
-                dim,
-                num_heads=num_heads,
-                qkv_bias=qkv_bias,
-                qk_scale=qk_scale,
-                attn_drop=attn_drop,
-                proj_drop=drop,
-                # ADD FOR ORPE
-                use_orpe=use_orpe,
-                core_matrix=core_matrix,
-                p_matrix=p_matrix,
-                theta_type=theta_type,
-                theta_learned=theta_learned,
-                householder_learned=householder_learned,
-                orpe_dim=orpe_dim,
-            )
-            #self.temporal_fc = nn.Linear(dim, dim)
+            if self.share_ts_params:
+                self.attn = LinearAttention(
+                    dim,
+                    num_heads=num_heads,
+                    qkv_bias=qkv_bias,
+                    qk_scale=qk_scale,
+                    attn_drop=attn_drop,
+                    proj_drop=drop,
+                    # ADD FOR ORPE
+                    use_orpe=use_orpe,
+                    core_matrix=core_matrix,
+                    p_matrix=p_matrix,
+                    theta_type=theta_type,
+                    theta_learned=theta_learned,
+                    householder_learned=householder_learned,
+                    orpe_dim=orpe_dim,
+                    insert_control_point=insert_control_point,
+                )
+            else:
+                self.attn = LinearAttention(
+                    dim,
+                    num_heads=num_heads,
+                    qkv_bias=qkv_bias,
+                    qk_scale=qk_scale,
+                    attn_drop=attn_drop,
+                    proj_drop=drop,
+                    # ADD FOR ORPE
+                    use_orpe=use_orpe,
+                    core_matrix=core_matrix,
+                    p_matrix=p_matrix,
+                    theta_type=theta_type,
+                    theta_learned=theta_learned,
+                    householder_learned=householder_learned,
+                    orpe_dim=orpe_dim,
+                    insert_control_point=insert_control_point,
+                )
+                self.temporal_norm1 = norm_layer(dim)
+                self.temporal_attn = LinearAttention(
+                    dim,
+                    num_heads=num_heads,
+                    qkv_bias=qkv_bias,
+                    qk_scale=qk_scale,
+                    attn_drop=attn_drop,
+                    proj_drop=drop,
+                    # ADD FOR ORPE
+                    use_orpe=use_orpe,
+                    core_matrix=core_matrix,
+                    p_matrix=p_matrix,
+                    theta_type=theta_type,
+                    theta_learned=theta_learned,
+                    householder_learned=householder_learned,
+                    orpe_dim=orpe_dim,
+                    insert_control_point=insert_control_point,
+                )
+                #self.temporal_fc = nn.Linear(dim, dim)
         elif self.attention_type == 'xvit':
             self.attn = Attention(
                 dim,
@@ -489,42 +511,60 @@ class LinearBlock(nn.Module):
             x = x + self.drop_path(self.mlp(self.norm2(x), H, W))
             return x
         elif self.attention_type == 'divided_time_space':
-            BT, S, E = x.shape
+            ############### add cls_token     #####################
+            # xt = x[:, 1:, :]
+            # xt = rearrange(xt, 'b (t s) m -> (b t) s m', t=T)
+            ############################################
+            xt = x
+            BT, S, E = xt.shape
             B = BT//T
             ## Temporal
-            xt_ = rearrange(x, '(b t) (h w) m -> b t (h w) m', b=B, h=H, w=W, t=T)
+            xt_ = rearrange(xt, '(b t) (h w) m -> b t (h w) m', b=B, h=H, w=W, t=T)
             xt_ = xt_.transpose(1, 2)
             xt_ = rearrange(xt_, 'b (h w) t m -> b (h w t) m', b=B, h=H, w=W, t=T)
             xt = rearrange(xt_, 'b (h w t) m -> (b h w) t m', b=B, h=H, w=W, t=T)
-            res_temporal = self.drop_path(self.temporal_attn(self.temporal_norm1(xt)))
+            if self.share_ts_params:
+                res_temporal = self.drop_path(self.attn(self.norm1(xt)))
+            else:
+                res_temporal = self.drop_path(self.temporal_attn(self.temporal_norm1(xt), execute=True))
             res_temporal = rearrange(res_temporal, '(b h w) t m -> b (h w t) m', b=B, h=H, w=W, t=T)
             #res_temporal = self.temporal_fc(res_temporal)
             xt = xt_ + res_temporal
 
             ## Spatial
-            #init_cls_token = x[:, 0, :].unsqueeze(1)
-            #cls_token = init_cls_token.repeat(1, T, 1)
-            #cls_token = rearrange(cls_token, 'b t m -> (b t) m', b=B, t=T).unsqueeze(1)
+            ############### add cls_token     #####################
+            # init_cls_token = x[:, 0, :].unsqueeze(1)
+            # cls_token = init_cls_token.repeat(1, T, 1)
+            # cls_token = rearrange(cls_token, 'b t m -> (b t) m', b=B, t=T).unsqueeze(1)
+
             xs = xt
             xs = rearrange(xs, 'b (h w t) m -> (b t) (h w) m', b=B, h=H, w=W, t=T)
-            #xs = torch.cat((cls_token, xs), 1)
-            res_spatial = self.drop_path(self.attn(self.norm1(xs)))
+            ############### add cls_token     #####################
+            # xs = torch.cat((cls_token, xs), 1)
+
+            res_spatial = self.drop_path(self.attn(self.norm1(xs), execute=True))
 
             ### Taking care of CLS token
-            #cls_token = res_spatial[:, 0, :]
-            #cls_token = rearrange(cls_token, '(b t) m -> b t m', b=B, t=T)
-            #cls_token = torch.mean(cls_token, 1, True)  ## averaging for every frame
-            #res_spatial = res_spatial[:, 1:, :]
+            # cls_token = res_spatial[:, 0, :]
+            # cls_token = rearrange(cls_token, '(b t) m -> b t m', b=B, t=T)
+            # cls_token = torch.mean(cls_token, 1, True)  ## averaging for every frame
+            # res_spatial = res_spatial[:, 1:, :]
             res_spatial = rearrange(res_spatial, '(b t) (h w) m -> b (h w t) m', b=B, h=H, w=W, t=T)
             res = res_spatial
             x = xt
 
             ## Mlp
-            #x = torch.cat((init_cls_token, x), 1) + torch.cat((cls_token, res), 1)
+            # x = rearrange(x, 'b (h w t) m -> b (h w) t m', b=B, h=H, w=W, t=T).transpose(1, 2)
+            # x = rearrange(x, 'b t s m -> b (t s) m')
+            # res = rearrange(res, 'b (h w t) m -> b (h w) t m', b=B, h=H, w=W, t=T).transpose(1, 2)
+            # res = rearrange(res, 'b t s m -> b (t s) m')
+            # x = torch.cat((init_cls_token, x), 1) + torch.cat((cls_token, res), 1)
             x = x+res
             x = rearrange(x, 'b (h w t) m -> b (h w) t m', b=B, h=H, w=W, t=T).transpose(1, 2)
             x = rearrange(x, 'b t (h w) m -> (b t) (h w) m', b=B, h=H, w=W, t=T)
             x = x + self.drop_path(self.mlp(self.norm2(x), H, W))
+            #x = rearrange(x, '(b t) (h w) m -> b (t h w) m', b=B, h=H, w=W, t=T)
+            #x = torch.cat((cls_token, x), 1)
         return x
 
 
