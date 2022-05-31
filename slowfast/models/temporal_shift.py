@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+from einops import rearrange
 from .transformers import VisionTransformer
 
 ###################
@@ -86,6 +86,66 @@ def make_temporal_shift(net, n_segment, n_div=8, locations_list=[]):
                 n_div=n_div,
             )
             net.blocks[idx].attn.control_point_value = TemporalShift(
+                net.blocks[idx].attn.control_point_value,
+                n_segment=n_segment_list[counter + 2],
+                n_div=n_div,
+            )
+            counter += 1
+
+############################################spatial shift#########################################################
+
+class SpatialShift(nn.Module):
+    def __init__(self, net, n_segment=3, n_div=8):
+        super(SpatialShift, self).__init__()
+        self.net = net
+        self.n_segment = n_segment
+        self.fold_div = n_div
+
+    def forward(self, x):
+        ns, num_heads, t, c = x.size()
+        n_batch = ns // self.n_segment
+        x = x.view(n_batch, self.n_segment, num_heads, t, c)
+        fold = c * num_heads // self.fold_div
+
+        x = (
+            x.permute(0, 1, 2, 4, 3)
+            .contiguous()
+            .view(n_batch, self.n_segment, num_heads * c, t)
+        )
+        H = int(self.n_segment**0.5)
+        x = rearrange(x, 'b (h w) m t -> b h w m t', b=n_batch, h=H, w=H)
+        out = torch.zeros_like(x)
+        ##################h shift#################
+        out[:, :-1, :, :fold] = x[:, 1:, :, :fold]  # shift left
+        out[:, 1:, :, fold : 2 * fold] = x[:, :-1, :, fold : 2 * fold]  # shift right
+        ##################w shift#################
+        out[:, :, :-1, 2*fold : 3*fold] = x[:, :, 1:, 2*fold : 3*fold]  # shift left
+        out[:, :, 1:, 3*fold : 4*fold] = x[:, :, :-1, 3*fold : 4*fold]  # shift right
+        out[:, :, :, 4 * fold:] = x[:, :, :, 4 * fold:]  # not shift
+
+        out = rearrange(out, 'b h w m t -> b (h w) m t', b=n_batch, h=H, w=H)
+        out = (
+            out.view(n_batch, self.n_segment, num_heads, c, t)
+            .permute(0, 1, 2, 4, 3)
+            .contiguous()
+        )
+
+        return out.view(ns, num_heads, t, c)
+
+
+def make_spatial_shift(net, n_segment, n_div=8, locations_list=[]):
+    n_segment_list = [n_segment] * 20
+    assert n_segment_list[-1] > 0
+
+    counter = 0
+    for idx, block in enumerate(net.blocks):
+        if idx in locations_list:
+            net.blocks[idx].temporal_attn.control_point_query = SpatialShift(
+                net.blocks[idx].attn.control_point_query,
+                n_segment=n_segment_list[counter + 2],
+                n_div=n_div,
+            )
+            net.blocks[idx].temporal_attn.control_point_value = SpatialShift(
                 net.blocks[idx].attn.control_point_value,
                 n_segment=n_segment_list[counter + 2],
                 n_div=n_div,
