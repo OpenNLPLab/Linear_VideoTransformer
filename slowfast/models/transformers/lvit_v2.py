@@ -47,8 +47,38 @@ default_cfgs = {
         mean=(0.5, 0.5, 0.5),
         std=(0.5, 0.5, 0.5),
     ),
-
+    "lvit_v2_base_768_patch16_224": _cfg(
+            url="https://github.com/rwightman/pytorch-image-models/releases/download/v0.1-lvitjx/lvit_v2_base_768.pth",
+            num_classes=21843,
+            mean=(0.5, 0.5, 0.5),
+            std=(0.5, 0.5, 0.5),
+        ),
 }
+
+class OverlapPatchEmbed3D(nn.Module):
+    """ Image to Patch Embedding
+    """
+    def __init__(
+            self, img_size=224, in_chans=3, stride=14,
+            patch_size=16, z_block_size=2, embed_dim=768, flatten=True
+        ):
+        super().__init__()
+        self.proj = nn.Conv3d(in_chans, embed_dim,
+            kernel_size=(z_block_size, patch_size, patch_size),
+            stride=(1, stride, stride), padding=(0, patch_size // 2, patch_size // 2))
+        self.H, self.W = (img_size + patch_size*2 - stride) // stride, (
+                    img_size + patch_size*2 - stride) // stride
+        # add cls
+        self.num_patches = self.H * self.W
+        self.flatten = flatten
+        self.norm = nn.LayerNorm(embed_dim)
+    def forward(self, x):
+        x = self.proj(x)
+        B, C, T, H, W = x.shape
+        if self.flatten:
+            x = x.flatten(3).transpose(1, 2).transpose(2, 3) ##B, T, D, C
+        x = self.norm(x)
+        return x, H, W
 
 class OverlapPatchEmbed(nn.Module):
     """ Image to Patch Embedding
@@ -61,7 +91,7 @@ class OverlapPatchEmbed(nn.Module):
 
         self.img_size = img_size
         self.patch_size = patch_size
-        self.H, self.W = img_size[0] // stride, img_size[1] // stride
+        self.H, self.W = (img_size[0]+patch_size[0]*2-stride)//stride, (img_size[0]+patch_size[0]*2-stride) // stride
         # add cls
         self.num_patches = self.H * self.W
         self.proj = nn.Conv2d(in_chans, embed_dim, kernel_size=patch_size, stride=stride,
@@ -126,6 +156,7 @@ class LinearChangeVisionTransformer(nn.Module):
         stride=12,
         linear_attention=None,
         attention_type='full_time_space',
+        use_3d=False
     ):
         """
         Args:
@@ -158,24 +189,29 @@ class LinearChangeVisionTransformer(nn.Module):
         self.orpe_dim = orpe_dim
         print(f"use_orpe {self.use_orpe}")
         print(f"orpe_dim {self.orpe_dim}")
+        self.use_3d = use_3d
+        if self.use_3d:
+            self.patch_embed_3d = OverlapPatchEmbed3D(
+                img_size=224,
+                patch_size=patch_size,
+                in_chans=in_chans,
+                embed_dim=embed_dim,
+            )
+            self.patch_embed_3d.proj.weight.data = torch.zeros_like(
+                self.patch_embed_3d.proj.weight.data)
+            num_patches = self.patch_embed_3d.num_patches
+        else:
+            self.patch_embed = OverlapPatchEmbed(img_size=img_size,
+                                                patch_size=patch_size,
+                                                stride=stride,
+                                                in_chans=in_chans,
+                                                embed_dim=embed_dim)
 
-        # self.patch_embed = PatchEmbed(
-        #     img_size=224,
-        #     patch_size=patch_size,
-        #     in_chans=in_chans,
-        #     embed_dim=embed_dim,
-        # )
+            num_patches = self.patch_embed.num_patches
 
-        self.patch_embed = OverlapPatchEmbed(img_size=img_size,
-                                            patch_size=patch_size,
-                                            stride=stride,
-                                            in_chans=in_chans,
-                                            embed_dim=embed_dim)
-
-        num_patches = self.patch_embed.num_patches
-        # self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
+        #self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         # self.pos_embed = nn.Parameter(
-        #     torch.zeros(1, num_patches + 1, embed_dim)
+        #     torch.zeros(1, num_patches, embed_dim)
         # )
         self.temp_embed = nn.Parameter(torch.zeros(1, num_frames, 1, embed_dim))
         self.pos_drop = nn.Dropout(p=drop_rate)
@@ -226,8 +262,8 @@ class LinearChangeVisionTransformer(nn.Module):
             else nn.Identity()
         )
 
-        # trunc_normal_(self.pos_embed, std=0.02)
-        # trunc_normal_(self.cls_token, std=0.02)
+        #trunc_normal_(self.pos_embed, std=0.02)
+        #trunc_normal_(self.cls_token, std=0.02)
         self.apply(self._init_weights)
 
     def _init_weights(self, m):
@@ -264,12 +300,19 @@ class LinearChangeVisionTransformer(nn.Module):
         # print("===================")
         B = x.shape[0]
         # print(x.shape)
-        x, H, W = self.patch_embed(x)
+        if self.use_3d:
+            x = x.view((-1, num_frames) + x.size()[-3:]) ##b,f,c,h,w
+            x = x.transpose(1, 2)  #####b,c,f,h,w
+            x, H, W = self.patch_embed_3d(x)
+            x_last = x[:, -1, :, :]
+            x = torch.cat((x, x_last), dim=1)
+            x = x.view((-1,) + x.size()[2:])
+        else:
+            x, H, W = self.patch_embed(x)
         # print(x.shape)
         # cls_tokens = self.cls_token.expand(
         #     B, -1, -1
         # )  # stole cls_tokens impl from Phil Wang, thanks
-        # x = torch.cat((cls_tokens, x), dim=1)
         # # Interpolate positinoal embeddings
         # print(x.shape)
         # new_pos_embed = self.pos_embed
@@ -288,10 +331,18 @@ class LinearChangeVisionTransformer(nn.Module):
             + self.temp_embed
         )
         x = x.view(-1, x.size(2), x.size(3))
+        ###add cls_token
+        # x = x.view((-1, num_frames) + x.size()[-2:])
+        # x = rearrange(x, 'b t s c -> b (t s) c')
+        # cls_tokens = self.cls_token.expand(
+        #     x.size(0), -1, -1
+        # )
+        # x = torch.cat((cls_tokens, x), dim=1)
 
         for idx, blk in enumerate(self.blocks):
             x = blk(x, H, W, num_frames)
-
+        # x = x[:, 1:, :]
+        # x = rearrange(x, 'b (t s) c -> (b t) s c', t=num_frames)
         # (b f) C
         x = self.norm(x)
         x = self.pre_logits(x)
@@ -396,4 +447,16 @@ def lvit_v2_base_patch16_224(pretrained=False, **kwargs):
     )
     return model
 
+@register_model
+def lvit_v2_base_768_patch16_224(pretrained=False, **kwargs):
+    """ lvit-Base (lvit-B/16) from original paper (https://arxiv.org/abs/2010.11929).
+    ImageNet-1k weights fine-tuned from in21k @ 224x224, source https://github.com/google-research/vision_transformer.
+    """
+    model_kwargs = dict(
+        patch_size=16, embed_dim=768, depth=12, num_heads=8, has_kv=False, stride=14, **kwargs
+    )
+    model = _create_vision_transformer(
+        "lvit_v2_base_768_patch16_224", pretrained=pretrained, **model_kwargs
+    )
+    return model
 ####################

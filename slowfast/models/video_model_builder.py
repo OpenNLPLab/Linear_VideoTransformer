@@ -14,7 +14,7 @@ from torch.nn.init import constant_, normal_
 
 from . import head_helper
 from .build import MODEL_REGISTRY
-from .temporal_shift import ConsensusModule, make_temporal_shift
+from .temporal_shift import ConsensusModule, make_temporal_shift, make_spatial_shift
 
 
 class GN(nn.GroupNorm):
@@ -127,6 +127,13 @@ class XVIT(nn.Module):
                     self.base_model,
                     self.cfg.XVIT.NUM_SEGMENTS,
                     n_div=self.cfg.XVIT.SHIFT_DIV,
+                    locations_list=self.cfg.XVIT.LOCATIONS_LIST,
+                )
+
+                make_spatial_shift(
+                    self.base_model,
+                    289,
+                    n_div=8,
                     locations_list=self.cfg.XVIT.LOCATIONS_LIST,
                 )
 
