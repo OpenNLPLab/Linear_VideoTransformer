@@ -50,3 +50,23 @@ class VitHead(nn.Module):
         # MLP head
         x = self.mlp_head(x[:, 0])
         return x
+
+class VVTHead(nn.Module):
+    def __init__(self, embed_dim, cfg):
+        super().__init__()
+        self.mlp_head = nn.Sequential(
+            nn.LayerNorm(cfg.TEMPORAL_HEAD.HIDDEN_DIM),
+            nn.Linear(cfg.TEMPORAL_HEAD.HIDDEN_DIM, cfg.TEMPORAL_HEAD.MLP_DIM),
+            nn.GELU(),
+            nn.Dropout(cfg.MODEL.DROPOUT_RATE),
+            nn.Linear(cfg.TEMPORAL_HEAD.MLP_DIM, cfg.MODEL.NUM_CLASSES),
+        )
+
+    def forward(self, x, position_ids, num_frames):
+        """
+        B, F, E
+        """
+        x = x.mean(dim=1)
+        x = self.mlp_head(x)
+
+        return x

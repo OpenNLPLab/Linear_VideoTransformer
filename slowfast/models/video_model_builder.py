@@ -129,12 +129,13 @@ class XVIT(nn.Module):
                     n_div=self.cfg.XVIT.SHIFT_DIV,
                     locations_list=self.cfg.XVIT.LOCATIONS_LIST,
                 )
-
+            if self.cfg.XVIT.USE_SpatialShift:
                 make_spatial_shift(
                     self.base_model,
                     289,
                     n_div=8,
                     locations_list=self.cfg.XVIT.LOCATIONS_LIST,
+                    shift_size=self.cfg.XVIT.SHIFT_SIZE,
                 )
 
             self.base_model.last_layer_name = "head"

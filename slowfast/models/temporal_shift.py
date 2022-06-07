@@ -95,9 +95,10 @@ def make_temporal_shift(net, n_segment, n_div=8, locations_list=[]):
 ############################################spatial shift#########################################################
 
 class SpatialShift(nn.Module):
-    def __init__(self, net, n_segment=3, n_div=8):
+    def __init__(self, net, n_segment=3, n_div=8, shift_size=1):
         super(SpatialShift, self).__init__()
         self.net = net
+        self.shift_size = shift_size
         self.n_segment = n_segment
         self.fold_div = n_div
 
@@ -116,11 +117,11 @@ class SpatialShift(nn.Module):
         x = rearrange(x, 'b (h w) m t -> b h w m t', b=n_batch, h=H, w=H)
         out = torch.zeros_like(x)
         ##################h shift#################
-        out[:, :-1, :, :fold] = x[:, 1:, :, :fold]  # shift left
-        out[:, 1:, :, fold : 2 * fold] = x[:, :-1, :, fold : 2 * fold]  # shift right
+        out[:, :-1*self.shift_size, :, :fold] = x[:, self.shift_size:, :, :fold]  # shift left
+        out[:, self.shift_size:, :, fold : 2 * fold] = x[:, :-1*self.shift_size, :, fold : 2 * fold]  # shift right
         ##################w shift#################
-        out[:, :, :-1, 2*fold : 3*fold] = x[:, :, 1:, 2*fold : 3*fold]  # shift left
-        out[:, :, 1:, 3*fold : 4*fold] = x[:, :, :-1, 3*fold : 4*fold]  # shift right
+        out[:, :, :-1*self.shift_size, 2*fold : 3*fold] = x[:, :, self.shift_size:, 2*fold : 3*fold]  # shift left
+        out[:, :, self.shift_size:, 3*fold : 4*fold] = x[:, :, :-1*self.shift_size, 3*fold : 4*fold]  # shift right
         out[:, :, :, 4 * fold:] = x[:, :, :, 4 * fold:]  # not shift
 
         out = rearrange(out, 'b h w m t -> b (h w) m t', b=n_batch, h=H, w=H)
@@ -133,7 +134,7 @@ class SpatialShift(nn.Module):
         return out.view(ns, num_heads, t, c)
 
 
-def make_spatial_shift(net, n_segment, n_div=8, locations_list=[]):
+def make_spatial_shift(net, n_segment, n_div=8, locations_list=[], shift_size=1):
     n_segment_list = [n_segment] * 20
     assert n_segment_list[-1] > 0
 
@@ -141,13 +142,15 @@ def make_spatial_shift(net, n_segment, n_div=8, locations_list=[]):
     for idx, block in enumerate(net.blocks):
         if idx in locations_list:
             net.blocks[idx].temporal_attn.control_point_query = SpatialShift(
-                net.blocks[idx].attn.control_point_query,
+                net.blocks[idx].temporal_attn.control_point_query,
                 n_segment=n_segment_list[counter + 2],
                 n_div=n_div,
+                shift_size=shift_size
             )
             net.blocks[idx].temporal_attn.control_point_value = SpatialShift(
-                net.blocks[idx].attn.control_point_value,
+                net.blocks[idx].temporal_attn.control_point_value,
                 n_segment=n_segment_list[counter + 2],
                 n_div=n_div,
+                shift_size=shift_size
             )
             counter += 1

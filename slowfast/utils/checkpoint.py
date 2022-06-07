@@ -126,7 +126,7 @@ def save_checkpoint(path_to_job, model, optimizer, epoch, cfg, is_best=False):
     path_to_checkpoint = get_path_to_checkpoint(
         path_to_job,
         epoch + 1,
-        use_epoch=False,
+        use_epoch=True,
         extra="z_best_" if is_best else "",
     )
     with g_pathmgr.open(path_to_checkpoint, "wb") as f:

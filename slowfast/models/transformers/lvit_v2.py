@@ -156,7 +156,8 @@ class LinearChangeVisionTransformer(nn.Module):
         stride=12,
         linear_attention=None,
         attention_type='full_time_space',
-        use_3d=False
+        use_3d=False,
+        use_cgate=False
     ):
         """
         Args:
@@ -234,7 +235,8 @@ class LinearChangeVisionTransformer(nn.Module):
                     norm_layer=norm_layer,
                     has_kv=has_kv,
                     attention_type=attention_type,
-                    insert_control_point=True
+                    insert_control_point=True,
+                    use_cgate=use_cgate
                 )
                 for i in range(depth)
             ]
@@ -441,6 +443,19 @@ def lvit_v2_base_patch16_224(pretrained=False, **kwargs):
     """
     model_kwargs = dict(
         patch_size=16, embed_dim=512, depth=12, num_heads=8, has_kv=False, stride=14, **kwargs
+    )
+    model = _create_vision_transformer(
+        "lvit_v2_base_patch16_224", pretrained=pretrained, **model_kwargs
+    )
+    return model
+
+@register_model
+def lvit_v2_base_patch16_224_cgate(pretrained=False, **kwargs):
+    """ lvit-Base (lvit-B/16) from original paper (https://arxiv.org/abs/2010.11929).
+    ImageNet-1k weights fine-tuned from in21k @ 224x224, source https://github.com/google-research/vision_transformer.
+    """
+    model_kwargs = dict(
+        patch_size=16, embed_dim=512, depth=12, num_heads=8, has_kv=False, stride=14, use_cgate=True, **kwargs
     )
     model = _create_vision_transformer(
         "lvit_v2_base_patch16_224", pretrained=pretrained, **model_kwargs

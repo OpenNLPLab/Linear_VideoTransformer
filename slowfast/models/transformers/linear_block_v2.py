@@ -248,6 +248,7 @@ class LinearAttention(nn.Module):
             theta_learned=True,
             householder_learned=False,
             orpe_dim=1,
+            use_cgate=False
     ):
         super().__init__()
         self.num_heads = num_heads
@@ -262,7 +263,11 @@ class LinearAttention(nn.Module):
         self.attn_drop = nn.Dropout(attn_drop)
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
-
+        ############gate reweighting########
+        self.use_cgate = use_cgate
+        if use_cgate:
+            self.q_gate = nn.Linear(head_dim, head_dim)
+            self.k_gate = nn.Linear(head_dim, head_dim)
         # self.layer_norm = nn.LayerNorm(dim)
         # self.layer_norm = nn.LayerNorm(head_dim)
         self.use_orpe = use_orpe
@@ -316,6 +321,9 @@ class LinearAttention(nn.Module):
         eps = 1e-6
         q_ = F.relu(q) + self.scale
         k_ = F.relu(k) + self.scale
+        if self.use_cgate:
+            q_ = F.sigmoid(self.q_gate(q_)) * q_
+            k_ = F.sigmoid(self.k_gate(k_)) * k_
         # reshape
         # q_ = rearrange(q_, '(b f) n h e -> b f n h e', f=num_frames)
         # k_ = rearrange(k_, '(b f) n h e -> b f n h e', f=num_frames)
@@ -391,7 +399,8 @@ class LinearBlock(nn.Module):
             has_kv=False,
             attention_type='full_time_space',
             insert_control_point=False,
-            share_ts_params=False
+            share_ts_params=False,
+            use_cgate=False
     ):
         super().__init__()
         self.share_ts_params = share_ts_params
@@ -450,6 +459,7 @@ class LinearBlock(nn.Module):
                     householder_learned=householder_learned,
                     orpe_dim=orpe_dim,
                     insert_control_point=insert_control_point,
+                    use_cgate=use_cgate
                 )
                 self.temporal_norm1 = norm_layer(dim)
                 self.temporal_attn = LinearAttention(
@@ -468,6 +478,7 @@ class LinearBlock(nn.Module):
                     householder_learned=householder_learned,
                     orpe_dim=orpe_dim,
                     insert_control_point=insert_control_point,
+                    use_cgate=use_cgate
                 )
                 #self.temporal_fc = nn.Linear(dim, dim)
         elif self.attention_type == 'xvit':

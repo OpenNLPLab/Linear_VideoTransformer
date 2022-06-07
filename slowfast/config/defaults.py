@@ -116,6 +116,9 @@ _C.XVIT = CfgNode()
 _C.XVIT.NUM_SEGMENTS = 8
 
 _C.XVIT.CONSENSUS_TYPE = "vit"
+####new setting
+_C.XVIT.USE_SpatialShift = False
+_C.XVIT.SHIFT_SIZE = 1
 
 _C.XVIT.BEFORE_SOFTMAX = True
 
