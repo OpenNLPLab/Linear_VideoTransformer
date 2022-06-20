@@ -49,6 +49,7 @@ def init_distributed_mode(args):
         if torch.cuda.device_count() == 1:
             print('Not using distributed mode')
             args.distributed = False
+            args.local_rank = 0
             return
     else:
         print('Not using distributed mode')

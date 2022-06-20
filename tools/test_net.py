@@ -46,8 +46,7 @@ def perform_test(test_loader, model, test_meter, cfg, writer=None):
     model.eval()
     test_meter.iter_tic()
 
-    for cur_iter, (inputs, labels, video_idx, meta) in enumerate(test_loader):
-
+    for cur_iter, (inputs, labels, video_idx, meta, filename) in enumerate(test_loader):
         if cfg.NUM_GPUS:
             # Transfer the data to the current GPU device.
             if isinstance(inputs, (list,)):
@@ -72,7 +71,7 @@ def perform_test(test_loader, model, test_meter, cfg, writer=None):
         test_meter.data_toc()
 
         # Perform the forward pass.
-        preds = model(inputs)
+        preds = model(inputs, filename=filename)
 
         # Gather all the predictions across all the devices to perform ensemble.
         if cfg.NUM_GPUS > 1:

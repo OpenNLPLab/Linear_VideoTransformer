@@ -2,7 +2,7 @@
 # Mostly a modified copy from timm (https://github.com/rwightman/pytorch-image-models/blob/master/timm/models/vision_transformer.py)
 # ------------------------------------------------------------------------
 import math
-
+import os
 import numpy as np
 import torch
 import torch.nn as nn
@@ -102,6 +102,7 @@ class SimpleRMSNorm(nn.Module):
 
 
 # attention based linear complexity
+from ..temporal_shift import TemporalShift, SpatialShift
 class LinearJointTSAttention(nn.Module):
     def __init__(
             self,
@@ -126,6 +127,34 @@ class LinearJointTSAttention(nn.Module):
         head_dim = dim // num_heads
 
         self.insert_control_point = insert_control_point
+
+        if self.insert_control_point:
+            self.control_point = AfterReconstruction(dim)
+            control_point_query = AfterReconstruction(dim)
+            control_point_value = AfterReconstruction(dim)
+            self.control_tempshift_query = TemporalShift(
+                control_point_query,
+                n_segment=16,
+                n_div=4,
+            )
+            self.control_tempshift_value = TemporalShift(
+                control_point_value,
+                n_segment=16,
+                n_div=4,
+            )
+            self.control_spatialshift_query = SpatialShift(
+                control_point_query,
+                n_segment=289,
+                n_div=8,
+                shift_size=1,
+            )
+            self.control_spatialshift_value = SpatialShift(
+                control_point_value,
+                n_segment=289,
+                n_div=8,
+                shift_size=1,
+            )
+
         self.scale = qk_scale or head_dim ** -0.5
 
         self.scale = head_dim ** -0.5
@@ -170,6 +199,31 @@ class LinearJointTSAttention(nn.Module):
         qkv = rearrange(qkv, 'k b n (h e) -> k b n h e', h=self.num_heads)
         # b, n, h, e
         q, k, v = qkv[0], qkv[1], qkv[2]
+
+        #################################add shift#####################################
+        if self.insert_control_point:
+            T = num_frames
+            H = int(N**0.5)
+            W = int(N**0.5)
+            k = rearrange(k, '(b t) N h e -> (b N) t h e', t=T)
+            v = rearrange(v, '(b t) N h e -> (b N) t h e', t=T)
+            k = rearrange(k, 'b n h e -> b h n e')
+            v = rearrange(v, 'b n h e -> b h n e')
+            k = self.control_spatialshift_query(k)
+            v = self.control_spatialshift_value(v)
+            k = rearrange(k, 'b h n e -> b n h e')
+            v = rearrange(v, 'b h n e -> b n h e')
+
+            k = rearrange(k, '(b N) t h e -> (b t) N h e', N=N)
+            v = rearrange(v, '(b N) t h e -> (b t) N h e', N=N)
+            k = rearrange(k, 'b n h e -> b h n e')
+            v = rearrange(v, 'b n h e -> b h n e')
+            k = self.control_tempshift_query(k)
+            v = self.control_tempshift_value(v)
+            k = rearrange(k, 'b h n e -> b n h e')
+            v = rearrange(v, 'b h n e -> b n h e')
+        ######################################################################
+
         e = q.shape[-1]
         # act
         eps = 1e-6
@@ -248,12 +302,11 @@ class LinearAttention(nn.Module):
             theta_learned=True,
             householder_learned=False,
             orpe_dim=1,
-            use_cgate=False
+            use_cgate=False,
     ):
         super().__init__()
         self.num_heads = num_heads
         head_dim = dim // num_heads
-
         self.insert_control_point = insert_control_point
         self.scale = qk_scale or head_dim ** -0.5
 
@@ -266,8 +319,9 @@ class LinearAttention(nn.Module):
         ############gate reweighting########
         self.use_cgate = use_cgate
         if use_cgate:
-            self.q_gate = nn.Linear(head_dim, head_dim)
-            self.k_gate = nn.Linear(head_dim, head_dim)
+            # self.q_gate = nn.Linear(head_dim, head_dim)
+            # self.k_gate = nn.Linear(head_dim, head_dim)
+            self.pgate = nn.Linear(2*head_dim, head_dim)
         # self.layer_norm = nn.LayerNorm(dim)
         # self.layer_norm = nn.LayerNorm(head_dim)
         self.use_orpe = use_orpe
@@ -291,24 +345,20 @@ class LinearAttention(nn.Module):
         print(torch.min(x))
         print("=============================")
 
-    def forward(self, x, execute=False):
+    def forward(self, x, execute=False, save_qk=False, layer_idx=0, filename=None):
         """
         intput shape: (b * f), (w * h), c
         """
         if self.insert_control_point and execute:
             x = self.control_point(x)
         B, N, C = x.shape
-        # qkv = (
-        #     self.qkv(x)
-        #     .reshape(B, N, 3, self.num_heads, C // self.num_heads)
-        #     .permute(2, 0, 1, 3, 4)
-        # )
         # split to qkv
         qkv = rearrange(self.qkv(x), 'b n (k c) -> k b n c', k=3)
         # split to multi head
         qkv = rearrange(qkv, 'k b n (h e) -> k b n h e', h=self.num_heads)
         # b, n, h, e
         q, k, v = qkv[0], qkv[1], qkv[2]
+        #################shift before cgate#################
         if self.insert_control_point and execute:
             k = rearrange(k, 'b n h e -> b h n e')
             v = rearrange(v, 'b n h e -> b h n e')
@@ -316,25 +366,78 @@ class LinearAttention(nn.Module):
             v = self.control_point_value(v)
             k = rearrange(k, 'b h n e -> b n h e')
             v = rearrange(v, 'b h n e -> b n h e')
+        #################shift before cgate#################
         e = q.shape[-1]
         # act
         eps = 1e-6
         q_ = F.relu(q) + self.scale
         k_ = F.relu(k) + self.scale
         if self.use_cgate:
-            q_ = F.sigmoid(self.q_gate(q_)) * q_
-            k_ = F.sigmoid(self.k_gate(k_)) * k_
-        # reshape
-        # q_ = rearrange(q_, '(b f) n h e -> b f n h e', f=num_frames)
-        # k_ = rearrange(k_, '(b f) n h e -> b f n h e', f=num_frames)
-        # v_ = rearrange(v, '(b f) n h e -> b f n h e', f=num_frames)
+            qk = torch.cat([q_, k_], 3)
+            # gate = F.sigmoid(self.q_gate(q_))
+            # if save_qk:
+            #     filename = filename[0]
+            #     #save_file = f"layer{layer_idx}_concat_gate.npy".format(layer_idx=layer_idx)
+            #     save_file = f"layer{layer_idx}_q.npy".format(layer_idx=layer_idx)
+            #     save_dir = f"/mnt/lustre/share_data/liuzexiang/Data/ssv2/qk_weights/ssv2_64.18/pregate_q/{filename}"
+            #     os.makedirs(save_dir, exist_ok=True)
+            #     save_path = f"{save_dir}/{save_file}"
+            #     np.save(save_path, q_.transpose(1, 2)[0].cpu().detach().numpy())
+            #
+            #     save_file = f"layer{layer_idx}_k.npy".format(layer_idx=layer_idx)
+            #     save_dir = f"/mnt/lustre/share_data/liuzexiang/Data/ssv2/qk_weights/ssv2_64.18/pregate_k/{filename}"
+            #     os.makedirs(save_dir, exist_ok=True)
+            #     save_path = f"{save_dir}/{save_file}"
+            #     np.save(save_path, k_.transpose(1, 2)[0].cpu().detach().numpy())
+
+            q_ = F.sigmoid(self.pgate(qk)) * q_
+            k_ = F.sigmoid(self.pgate(qk)) * k_
+            # q_ = F.sigmoid(self.q_gate(q_)) * q_
+            # k_ = F.sigmoid(self.k_gate(k_)) * k_
+            q_ = self.attn_drop(q_)
+            k_ = self.attn_drop(k_)
+            #############################save qk##################################
+            # if save_qk:
+            #     #save_file = f"layer{layer_idx}_concat_gate.npy".format(layer_idx=layer_idx)
+            #     save_file = f"layer{layer_idx}_q.npy".format(layer_idx=layer_idx)
+            #     save_dir = f"/mnt/lustre/share_data/liuzexiang/Data/ssv2/qk_weights/ssv2_64.18/postgate_q/{filename}"
+            #     os.makedirs(save_dir, exist_ok=True)
+            #     save_path = f"{save_dir}/{save_file}"
+            #     np.save(save_path, q_.transpose(1, 2)[0].cpu().detach().numpy())
+            #
+            #     save_file = f"layer{layer_idx}_k.npy".format(layer_idx=layer_idx)
+            #     save_dir = f"/mnt/lustre/share_data/liuzexiang/Data/ssv2/qk_weights/ssv2_64.18/postgate_k/{filename}"
+            #     os.makedirs(save_dir, exist_ok=True)
+            #     save_path = f"{save_dir}/{save_file}"
+            #     np.save(save_path, k_.transpose(1, 2)[0].cpu().detach().numpy())
+            ###############################################################
+        #################shift after cgate#################
+        # if self.insert_control_point and execute:
+        #     k = rearrange(k, 'b n h e -> b h n e')
+        #     v = rearrange(v, 'b n h e -> b h n e')
+        #     k = self.control_point_query(k)
+        #     v = self.control_point_value(v)
+        #     k = rearrange(k, 'b h n e -> b n h e')
+        #     v = rearrange(v, 'b h n e -> b n h e')
+        #################shift after cgate#################
         if self.use_orpe:
             q_ = self.orpe(q_)
             k_ = self.orpe(k_)
-        # q_ = rearrange(q_, 'b f n h e -> b (f n) h e')
-        # k_ = rearrange(k_, 'b f n h e -> b (f n) h e')
-        # v_ = rearrange(v_, 'b f n h e -> b (f n) h e')
-
+        #############################save qk##################################
+        # if save_qk:
+        #     q_tmp = rearrange(q_, 'b n h e -> b h n e')
+        #     k_tmp = rearrange(k_, 'b n h e -> b h n e')
+        #     qk_weights = torch.einsum('bhnd,bhmd->bhnm', q_tmp, k_tmp)
+        #     denorm = torch.sum(qk_weights, dim=-1, keepdim=True)
+        #     qk_weights = qk_weights / denorm
+        #     i = 0
+        #     filename = filename[0]
+        #     save_file = f"layer{layer_idx}_SpaceQk.npy".format(layer_idx=layer_idx)
+        #     save_dir = f"/mnt/lustre/liuzexiang/cache/Code/XVIT/videocosformer/output/ssv2_63.95/qk_weights/{filename}"
+        #     os.makedirs(save_dir, exist_ok=True)
+        #     save_path = f"{save_dir}/{save_file}"
+        #     np.save(save_path, qk_weights[0].cpu().detach().numpy())
+        ###############################################################
         ##### compute
         d_min = 1e-4
         d_max = 1e4
@@ -343,35 +446,21 @@ class LinearAttention(nn.Module):
                            rearrange(v, 'b n h e -> b h n e'))
         # add
         # kv_ = torch.clamp(kv_, d_min, d_max)
-        # b 1 h e
         k_sum = torch.sum(k_, axis=1, keepdim=True)  # no einsum
         z_ = 1 / (torch.sum(torch.mul(q_, k_sum), axis=-1) + eps)  # no einsum
         # add
         # z_ = torch.clamp(z_, d_min, d_max)
-
-        # self.print_helper(kv_, 1)
 
         #### 计算qkv会产生较大的值
         # b h n e, b h e e -> b h n e -> b n h e
         attn_output = torch.matmul(q_.transpose(1, 2), kv_).transpose(1, 2)
         attn_output = torch.mul(attn_output, z_.unsqueeze(-1))
         # attn_output = torch.clamp(attn_output, d_min, d_max)
-        # self.print_helper(attn_output, 2)
-
-        # reshape
-
-        # reshape
-        # attn_output = rearrange(attn_output, 'b (f n) h e -> b f n h e', f=num_frames)
-        # attn_output = rearrange(attn_output, 'b f n h e -> (b f) n (h e)')
-
-        # self.print_helper(attn_output, 3)
 
         # outprojection
         attn_output = rearrange(attn_output, 'b n h e -> b n (h e)')
         attn_output = self.proj(attn_output)
         attn_output = self.proj_drop(attn_output)
-
-        # self.print_helper(attn_output, 4)
 
         return attn_output
 
@@ -400,10 +489,12 @@ class LinearBlock(nn.Module):
             attention_type='full_time_space',
             insert_control_point=False,
             share_ts_params=False,
-            use_cgate=False
+            use_cgate=False,
+            save_qk=False
     ):
         super().__init__()
         self.share_ts_params = share_ts_params
+        self.save_qk = save_qk
         self.norm1 = norm_layer(dim)
         self.attention_type = attention_type
         if self.attention_type == 'full_time_space':
@@ -511,7 +602,7 @@ class LinearBlock(nn.Module):
             drop=drop,
         )
 
-    def forward(self, x, H, W, num_frames):
+    def forward(self, x, H, W, num_frames, layer_idx=0, filename=None):
         T = num_frames
         if self.attention_type == 'full_time_space':
             x = x + self.drop_path(self.attn(self.norm1(x), num_frames))
@@ -553,7 +644,7 @@ class LinearBlock(nn.Module):
             ############### add cls_token     #####################
             # xs = torch.cat((cls_token, xs), 1)
 
-            res_spatial = self.drop_path(self.attn(self.norm1(xs), execute=True))
+            res_spatial = self.drop_path(self.attn(self.norm1(xs), execute=True, save_qk=self.save_qk, layer_idx=layer_idx, filename=filename))
 
             ### Taking care of CLS token
             # cls_token = res_spatial[:, 0, :]

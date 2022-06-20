@@ -51,7 +51,7 @@ def setup_logging(output_dir=None):
         _suppress_print()
 
     logger = logging.getLogger()
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.INFO)
     logger.propagate = False
     plain_formatter = logging.Formatter(
         "[%(asctime)s][%(levelname)s] %(filename)s: %(lineno)3d: %(message)s",
@@ -60,14 +60,14 @@ def setup_logging(output_dir=None):
 
     if du.is_master_proc():
         ch = logging.StreamHandler(stream=sys.stdout)
-        ch.setLevel(logging.DEBUG)
+        ch.setLevel(logging.INFO)
         ch.setFormatter(plain_formatter)
         logger.addHandler(ch)
 
     if output_dir is not None and du.is_master_proc(du.get_world_size()):
         filename = os.path.join(output_dir, "stdout.log")
         fh = logging.StreamHandler(_cached_log_stream(filename))
-        fh.setLevel(logging.DEBUG)
+        fh.setLevel(logging.INFO)
         fh.setFormatter(plain_formatter)
         logger.addHandler(fh)
 

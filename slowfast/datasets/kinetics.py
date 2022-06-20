@@ -7,7 +7,7 @@
 
 import os
 import random
-
+import io
 import h5py
 import numpy as np
 import slowfast.utils.logging as logging
@@ -15,7 +15,7 @@ import torch
 import torch.utils.data
 from fvcore.common.file_io import PathManager
 from PIL import Image
-
+from petrel_client.client import Client
 from . import decoder as decoder
 from . import image_decoder as image_decoder
 from . import utils as utils
@@ -80,13 +80,17 @@ class Kinetics(torch.utils.data.Dataset):
         # the frames.
         if self.mode in ["train", "val"]:
             self._num_clips = 1
+            self.use_hdf5 = True
+            self.use_ceph = True
         elif self.mode in ["test"]:
+            self.use_hdf5 = False
+            self.use_ceph = False
             self._num_clips = (
                 cfg.TEST.NUM_ENSEMBLE_VIEWS * cfg.TEST.NUM_SPATIAL_CROPS
             )
 
         logger.info("Constructing Kinetics {}...".format(mode))
-        self.use_hdf5 = False
+
         if self.use_hdf5:
             self._construct_loader_hdf5()
         else:
@@ -94,6 +98,8 @@ class Kinetics(torch.utils.data.Dataset):
         self._labels = torch.tensor(self._labels)
         self._spatial_temporal_idx = torch.tensor(self._spatial_temporal_idx)
         self._construct_augmentations()
+
+        self.mclient = Client(enable_mc=True)
 
     def _construct_augmentations(self):
         self.random_erasing = (
@@ -138,6 +144,13 @@ class Kinetics(torch.utils.data.Dataset):
                 path, label = path_label.split(
                     self.cfg.DATA.PATH_LABEL_SEPARATOR
                 )
+                
+                ########################process sunweixuan's annotations#######################
+                prefix = os.path.join(self.cfg.DATA.PATH_TO_DATA_DIR + 'test/')
+                filename = os.path.basename(path)
+                path = os.path.join(prefix, filename)
+                ###############################################################################
+                
                 for idx in range(self._num_clips):
                     self._path_to_videos.append(
                         os.path.join(self.cfg.DATA.PATH_PREFIX, path)
@@ -213,6 +226,11 @@ class Kinetics(torch.utils.data.Dataset):
                 path, num_frames, label = path_label.split(
                     self.cfg.DATA.PATH_LABEL_SEPARATOR
                 )
+                
+                ########use weixuan's annatation################
+                path = path.split('h5/')[-1].split('.h5')[0]
+                ###########################################
+                
                 num_frames = int(num_frames)
                 if num_frames < 3:
                     num_skipped_videos += 1
@@ -305,23 +323,43 @@ class Kinetics(torch.utils.data.Dataset):
             # Decode from hdf5
             if self.use_hdf5:
                 frames = None
-                with h5py.File(
-                    f"{self._path_to_videos[index]}.h5", "r"
-                ) as video_h5:
-                    video_key = list(video_h5.keys())[0]
+                if self.use_ceph:
+                    h5_file_name = self._path_to_videos[index].split('/')[-1]
+                    value = self.mclient.Get(f's3://mmg_data_cv/kinetics_400_h5/{h5_file_name}.h5')
+                    value_buf = io.BytesIO(value)
+                    with h5py.File(value_buf) as video_h5:
+                        video_key = list(video_h5.keys())[0]
 
-                    frames, frames_index = image_decoder.decode(
-                        video_h5,
-                        video_key,
-                        sampling_rate,
-                        self.cfg.DATA.NUM_FRAMES,
-                        temporal_sample_index,
-                        self.cfg.TEST.NUM_ENSEMBLE_VIEWS,
-                        video_meta=self._video_meta[index],
-                        target_fps=self.cfg.DATA.TARGET_FPS,
-                        max_spatial_scale=max_scale,
-                        mode=self.mode,
-                    )
+                        frames, frames_index = image_decoder.decode(
+                            video_h5,
+                            video_key,
+                            sampling_rate,
+                            self.cfg.DATA.NUM_FRAMES,
+                            temporal_sample_index,
+                            self.cfg.TEST.NUM_ENSEMBLE_VIEWS,
+                            video_meta=self._video_meta[index],
+                            target_fps=self.cfg.DATA.TARGET_FPS,
+                            max_spatial_scale=max_scale,
+                            mode=self.mode,
+                        )
+                else:
+                    with h5py.File(
+                        f"{self._path_to_videos[index]}.h5", "r"
+                    ) as video_h5:
+                        video_key = list(video_h5.keys())[0]
+
+                        frames, frames_index = image_decoder.decode(
+                            video_h5,
+                            video_key,
+                            sampling_rate,
+                            self.cfg.DATA.NUM_FRAMES,
+                            temporal_sample_index,
+                            self.cfg.TEST.NUM_ENSEMBLE_VIEWS,
+                            video_meta=self._video_meta[index],
+                            target_fps=self.cfg.DATA.TARGET_FPS,
+                            max_spatial_scale=max_scale,
+                            mode=self.mode,
+                        )
 
                 if frames is None:
                     continue
@@ -472,8 +510,8 @@ class Kinetics(torch.utils.data.Dataset):
             label = self._labels[index]
             frames = utils.pack_pathway_output(self.cfg, frames, frames_index)
             # print('frames shape:', frames[0].shape)
-
-            return frames, label, index, {}
+            file_name = self._path_to_videos[index].split('/')[-1]
+            return frames, label, index, {}, file_name
         else:
             raise RuntimeError(
                 "Failed to fetch video after {} retries.".format(

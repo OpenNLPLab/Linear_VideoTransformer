@@ -45,6 +45,11 @@ default_cfgs = {
         mean=(0.5, 0.5, 0.5),
         std=(0.5, 0.5, 0.5),
     ),
+    'vit_base_patch16_224': _cfg(
+        url='https://github.com/rwightman/pytorch-image-models/releases/download/v0.1-weights/vit_base_p16_224-4e355ebd.pth',
+        mean=(0.5, 0.5, 0.5),
+        std=(0.5, 0.5, 0.5),
+        ),
     "vit_base_patch16_384": _cfg(
         url="https://github.com/rwightman/pytorch-image-models/releases/download/v0.1-vitjx/jx_vit_base_p16_384-83fb41ba.pth",
         input_size=(3, 384, 384),
@@ -312,7 +317,7 @@ class VisionTransformer(nn.Module):
             else nn.Identity()
         )
 
-    def forward_features(self, x, num_frames=None):
+    def forward_features(self, x, num_frames=None, filename=None):
         B = x.shape[0]
         x = self.patch_embed(x)
 
@@ -357,14 +362,14 @@ class VisionTransformer(nn.Module):
         x = x.view(-1, x.size(2), x.size(3))
 
         for idx, blk in enumerate(self.blocks):
-            x = blk(x, num_frames)
+            x = blk(x, num_frames, layer_idx=idx, filename=filename)
 
         x = self.norm(x)[:, 0]
         x = self.pre_logits(x)
         return x
 
-    def forward(self, x, num_frames=None):
-        x = self.forward_features(x, num_frames)
+    def forward(self, x, num_frames=None, filename=None):
+        x = self.forward_features(x, num_frames, filename=filename)
         x = self.head(x)
         return x
 
@@ -451,7 +456,7 @@ def vit_base_patch16_224(pretrained=False, **kwargs):
     ImageNet-1k weights fine-tuned from in21k @ 224x224, source https://github.com/google-research/vision_transformer.
     """
     model_kwargs = dict(
-        patch_size=16, embed_dim=768, depth=12, num_heads=12, **kwargs
+        patch_size=16, embed_dim=768, depth=12, num_heads=12, qkv_bias=False, pretrained_strict=False, **kwargs
     )
     model = _create_vision_transformer(
         "vit_base_patch16_224", pretrained=pretrained, **model_kwargs

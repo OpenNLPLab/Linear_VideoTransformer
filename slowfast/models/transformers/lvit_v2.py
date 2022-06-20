@@ -18,7 +18,7 @@ from timm.models.helpers import build_model_with_cfg
 
 from .transformer_block import Block
 from .linear_block_v2 import LinearBlock
-from einops import rearrange
+from einops import rearrange, repeat
 
 _logger = logging.getLogger(__name__)
 
@@ -77,6 +77,76 @@ class OverlapPatchEmbed3D(nn.Module):
         B, C, T, H, W = x.shape
         if self.flatten:
             x = x.flatten(3).transpose(1, 2).transpose(2, 3) ##B, T, D, C
+        x = self.norm(x)
+        return x, H, W
+
+
+class OverlapPatchEmbed3D_new(nn.Module):
+    """ Image to Patch Embedding
+    """
+
+    def __init__(self, img_size=224, patch_size=16, stride=14, in_chans=3, embed_dim=768):
+        super().__init__()
+        img_size = to_2tuple(img_size)
+        # patch_size = to_2tuple(patch_size)
+
+        self.img_size = img_size
+        self.patch_size = patch_size
+        # add cls
+        # self.num_patches = self.H * self.W
+        self.proj = nn.Conv2d(in_chans, embed_dim, kernel_size=patch_size, stride=stride,
+                              padding=(patch_size // 2, patch_size // 2))
+
+        self.proj3d = nn.Conv3d(in_chans, embed_dim, kernel_size=(3, patch_size, patch_size),
+                                stride=(1, stride, stride), padding=(1, patch_size // 2, patch_size // 2))
+
+        self.norm = nn.LayerNorm(embed_dim)
+
+        self.conv_2d_list = []
+        self.conv_3d_list = []
+        self.apply(self._init_weights)
+        self.convert_weight()
+
+    def _init_weights(self, m):
+        if isinstance(m, nn.Linear):
+            trunc_normal_(m.weight, std=.02)
+            if isinstance(m, nn.Linear) and m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+        elif isinstance(m, nn.LayerNorm):
+            nn.init.constant_(m.bias, 0)
+            nn.init.constant_(m.weight, 1.0)
+        elif isinstance(m, nn.Conv2d):
+            fan_out = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+            fan_out //= m.groups
+            m.weight.data.normal_(0, math.sqrt(2.0 / fan_out))
+            if m.bias is not None:
+                m.bias.data.zero_()
+            self.conv_2d_list.append(m)
+        elif isinstance(m, nn.Conv3d):
+            self.conv_3d_list.append(m)
+
+    def convert_weight(self):
+        '''
+        inflate 2 weight into 3d
+        '''
+
+        for i in range(len(self.conv_2d_list)):
+            weights_2d = self.conv_2d_list[i].weight.data
+            weights_3d = self.conv_3d_list[i].weight
+            temporal_dim = weights_3d.shape[2]
+
+            inflated_2d = repeat(weights_2d, 'a b d e -> a b c d e', c=temporal_dim) / temporal_dim
+
+            self.conv_3d_list[i].weight = torch.nn.Parameter(inflated_2d)
+            self.conv_2d_list[i].requires_grad = False
+
+    def forward(self, x):
+
+        x = self.proj3d(x)
+        # 8, 768, 16, 14, 14
+        x = rearrange(x, 'b c f h w -> (b f) c h w')
+        B, C, H, W = x.shape
+        x = x.flatten(2).transpose(1, 2)
         x = self.norm(x)
         return x, H, W
 
@@ -157,7 +227,8 @@ class LinearChangeVisionTransformer(nn.Module):
         linear_attention=None,
         attention_type='full_time_space',
         use_3d=False,
-        use_cgate=False
+        use_cgate=False,
+        save_qk=False
     ):
         """
         Args:
@@ -192,15 +263,15 @@ class LinearChangeVisionTransformer(nn.Module):
         print(f"orpe_dim {self.orpe_dim}")
         self.use_3d = use_3d
         if self.use_3d:
-            self.patch_embed_3d = OverlapPatchEmbed3D(
+            self.patch_embed_3d = OverlapPatchEmbed3D_new(
                 img_size=224,
                 patch_size=patch_size,
                 in_chans=in_chans,
                 embed_dim=embed_dim,
             )
-            self.patch_embed_3d.proj.weight.data = torch.zeros_like(
-                self.patch_embed_3d.proj.weight.data)
-            num_patches = self.patch_embed_3d.num_patches
+            # self.patch_embed_3d.proj.weight.data = torch.zeros_like(
+            #     self.patch_embed_3d.proj.weight.data)
+            #num_patches = self.patch_embed_3d.num_patches
         else:
             self.patch_embed = OverlapPatchEmbed(img_size=img_size,
                                                 patch_size=patch_size,
@@ -236,7 +307,8 @@ class LinearChangeVisionTransformer(nn.Module):
                     has_kv=has_kv,
                     attention_type=attention_type,
                     insert_control_point=True,
-                    use_cgate=use_cgate
+                    use_cgate=use_cgate,
+                    save_qk=save_qk
                 )
                 for i in range(depth)
             ]
@@ -292,7 +364,7 @@ class LinearChangeVisionTransformer(nn.Module):
             else nn.Identity()
         )
 
-    def forward_features(self, x, num_frames):
+    def forward_features(self, x, num_frames, filename=None):
         """
         intput shape: (b * f), c, w, h
         """
@@ -306,9 +378,9 @@ class LinearChangeVisionTransformer(nn.Module):
             x = x.view((-1, num_frames) + x.size()[-3:]) ##b,f,c,h,w
             x = x.transpose(1, 2)  #####b,c,f,h,w
             x, H, W = self.patch_embed_3d(x)
-            x_last = x[:, -1, :, :]
-            x = torch.cat((x, x_last), dim=1)
-            x = x.view((-1,) + x.size()[2:])
+            # x_last = x[:, -1, :, :]
+            # x = torch.cat((x, x_last), dim=1)
+            # x = x.view((-1,) + x.size()[2:])
         else:
             x, H, W = self.patch_embed(x)
         # print(x.shape)
@@ -342,7 +414,7 @@ class LinearChangeVisionTransformer(nn.Module):
         # x = torch.cat((cls_tokens, x), dim=1)
 
         for idx, blk in enumerate(self.blocks):
-            x = blk(x, H, W, num_frames)
+            x = blk(x, H, W, num_frames, layer_idx=idx, filename=filename)
         # x = x[:, 1:, :]
         # x = rearrange(x, 'b (t s) c -> (b t) s c', t=num_frames)
         # (b f) C
@@ -351,8 +423,8 @@ class LinearChangeVisionTransformer(nn.Module):
 
         return x
 
-    def forward(self, x, num_frames):
-        x = self.forward_features(x, num_frames)
+    def forward(self, x, num_frames, filename=None):
+        x = self.forward_features(x, num_frames, filename=filename)
         # B, N, E
         x = self.head(x)
         # print(x.shape)
@@ -443,19 +515,6 @@ def lvit_v2_base_patch16_224(pretrained=False, **kwargs):
     """
     model_kwargs = dict(
         patch_size=16, embed_dim=512, depth=12, num_heads=8, has_kv=False, stride=14, **kwargs
-    )
-    model = _create_vision_transformer(
-        "lvit_v2_base_patch16_224", pretrained=pretrained, **model_kwargs
-    )
-    return model
-
-@register_model
-def lvit_v2_base_patch16_224_cgate(pretrained=False, **kwargs):
-    """ lvit-Base (lvit-B/16) from original paper (https://arxiv.org/abs/2010.11929).
-    ImageNet-1k weights fine-tuned from in21k @ 224x224, source https://github.com/google-research/vision_transformer.
-    """
-    model_kwargs = dict(
-        patch_size=16, embed_dim=512, depth=12, num_heads=8, has_kv=False, stride=14, use_cgate=True, **kwargs
     )
     model = _create_vision_transformer(
         "lvit_v2_base_patch16_224", pretrained=pretrained, **model_kwargs

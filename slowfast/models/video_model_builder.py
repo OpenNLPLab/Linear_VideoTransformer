@@ -44,7 +44,10 @@ class XVIT(nn.Module):
         feature_dim = self._prepare_classifier(cfg.MODEL.NUM_CLASSES)
 
         if cfg.XVIT.CONSENSUS_TYPE == "vit":
-            self.consensus = head_helper.VitHead(cfg.TEMPORAL_HEAD.HIDDEN_DIM, cfg)
+            if "lvit" in cfg.XVIT.BASE_MODEL:
+                self.consensus = head_helper.VVTHead(cfg.TEMPORAL_HEAD.HIDDEN_DIM, cfg)
+            else:
+                self.consensus = head_helper.VitHead(cfg.TEMPORAL_HEAD.HIDDEN_DIM, cfg)
         else:
             self.consensus = ConsensusModule(cfg.XVIT.CONSENSUS_TYPE)
 
@@ -103,25 +106,44 @@ class XVIT(nn.Module):
                 norm_layer = partial(nn.BatchNorm1d, eps=1e-6)
 
             from timm.models import create_model
-
-            self.base_model = create_model(
-                self.cfg.XVIT.BASE_MODEL,
-                pretrained=self.cfg.XVIT.PRETRAIN,
-                img_size=self.cfg.DATA.TEST_CROP_SIZE
-                if self.cfg.TEST.ENABLE and not self.cfg.TRAIN.ENABLE
-                else self.cfg.DATA.TRAIN_CROP_SIZE,
-                num_classes=1000,
-                drop_rate=0,
-                drop_connect_rate=None,  # DEPRECATED, use drop_path
-                drop_path_rate=self.cfg.XVIT.BACKBONE.DROP_PATH_RATE,
-                attn_drop_rate=self.cfg.XVIT.BACKBONE.DROP_ATTN_RATE,
-                drop_block_rate=None,
-                norm_layer=norm_layer,
-                global_pool=None,
-                bn_tf=False,
-                attention_type=self.cfg.ATTENTION_TYPE
-            )
-
+            if "lvit" in self.cfg.XVIT.BASE_MODEL:
+                self.base_model = create_model(
+                    self.cfg.XVIT.BASE_MODEL,
+                    pretrained=self.cfg.XVIT.PRETRAIN,
+                    img_size=self.cfg.DATA.TEST_CROP_SIZE
+                    if self.cfg.TEST.ENABLE and not self.cfg.TRAIN.ENABLE
+                    else self.cfg.DATA.TRAIN_CROP_SIZE,
+                    num_classes=1000,
+                    drop_rate=0,
+                    drop_connect_rate=None,  # DEPRECATED, use drop_path
+                    drop_path_rate=self.cfg.XVIT.BACKBONE.DROP_PATH_RATE,
+                    attn_drop_rate=self.cfg.XVIT.BACKBONE.DROP_ATTN_RATE,
+                    drop_block_rate=None,
+                    norm_layer=norm_layer,
+                    global_pool=None,
+                    bn_tf=False,
+                    attention_type=self.cfg.ATTENTION_TYPE,
+                    use_3d=self.cfg.USE_3D,
+                    use_cgate=self.cfg.USE_CGATE,
+                    save_qk=self.cfg.SAVE_QK
+                )
+            else:
+                self.base_model = create_model(
+                    self.cfg.XVIT.BASE_MODEL,
+                    pretrained=self.cfg.XVIT.PRETRAIN,
+                    img_size=self.cfg.DATA.TEST_CROP_SIZE
+                    if self.cfg.TEST.ENABLE and not self.cfg.TRAIN.ENABLE
+                    else self.cfg.DATA.TRAIN_CROP_SIZE,
+                    num_classes=1000,
+                    drop_rate=0,
+                    drop_connect_rate=None,  # DEPRECATED, use drop_path
+                    drop_path_rate=self.cfg.XVIT.BACKBONE.DROP_PATH_RATE,
+                    attn_drop_rate=self.cfg.XVIT.BACKBONE.DROP_ATTN_RATE,
+                    drop_block_rate=None,
+                    norm_layer=norm_layer,
+                    global_pool=None,
+                    bn_tf=False
+                )
             if self.cfg.XVIT.USE_XVIT:
                 make_temporal_shift(
                     self.base_model,
@@ -149,7 +171,7 @@ class XVIT(nn.Module):
         """
         super(XVIT, self).train(mode)
 
-    def forward(self, input, no_reshape=False):
+    def forward(self, input, no_reshape=False, filename=None):
         with torch.set_grad_enabled(not self.cfg.SOLVER.FREEZE_BACKBONE):
             if isinstance(input, list):
                 if self.cfg.XVIT.CONSENSUS_TYPE == "vit":
@@ -168,7 +190,7 @@ class XVIT(nn.Module):
                 input = torch.transpose(input, 1, 2).contiguous()
                 input = input.view((-1, sample_len) + input.size()[-2:])
 
-            base_out = self.base_model(input, num_frames=self.cfg.DATA.NUM_FRAMES)
+            base_out = self.base_model(input, num_frames=self.cfg.DATA.NUM_FRAMES, filename=filename)
 
             if isinstance(base_out, tuple):
                 base_out = base_out[0]

@@ -27,7 +27,7 @@ TEMPORAL_HEAD:
   HIDDEN_DIM: 512
   NUM_ATTENTION_HEADS: 8
 XVIT:
-  BASE_MODEL: lvit_v2_base_patch16_224_cgate
+  BASE_MODEL: lvit_v2_base_patch16_224
   CONSENSUS_TYPE: 'vit'
   USE_XVIT: True
   USE_SpatialShift: True
@@ -80,5 +80,8 @@ DATA_LOADER:
 NUM_GPUS: 8
 NUM_SHARDS: 1
 RNG_SEED: 0
-OUTPUT_DIR: output/lv2_dts_vit_St_Ts_cgate
+OUTPUT_DIR: output/lv2_dts_vvt_St_Ts_gate/
 ATTENTION_TYPE: divided_time_space
+USE_3D: False
+USE_CGATE: True
+SAVE_QK: False

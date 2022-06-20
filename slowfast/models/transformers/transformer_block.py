@@ -2,7 +2,7 @@
 # Mostly a modified copy from timm (https://github.com/rwightman/pytorch-image-models/blob/master/timm/models/vision_transformer.py)
 # ------------------------------------------------------------------------
 import math
-
+import os
 import numpy as np
 import torch
 import torch.nn as nn
@@ -54,6 +54,7 @@ class Attention(nn.Module):
         attn_drop=0.0,
         proj_drop=0.0,
         insert_control_point=False,
+        use_cgate=False
     ):
         super().__init__()
         self.num_heads = num_heads
@@ -72,8 +73,12 @@ class Attention(nn.Module):
             self.control_point = AfterReconstruction(dim)
             self.control_point_query = AfterReconstruction(dim)
             self.control_point_value = AfterReconstruction(dim)
-
-    def forward(self, x, num_frames):
+        self.use_cgate = use_cgate
+        if use_cgate:
+            # self.q_gate = nn.Linear(head_dim, head_dim)
+            # self.k_gate = nn.Linear(head_dim, head_dim)
+            self.pgate = nn.Linear(2*head_dim, head_dim)
+    def forward(self, x, num_frames, layer_idx=0, filename=None):
         if self.insert_control_point:
             x = self.control_point(x)
         B, N, C = x.shape
@@ -84,13 +89,39 @@ class Attention(nn.Module):
             .permute(2, 0, 3, 1, 4)
         )
         q, k, v = qkv[0], qkv[1], qkv[2]
-
         if self.insert_control_point:
             k = self.control_point_query(k)
             v = self.control_point_value(v)
-
+        if self.use_cgate:
+            qk = torch.cat([q, k], 3)
+            q = F.sigmoid(self.pgate(qk)) * q
+            k = F.sigmoid(self.pgate(qk)) * k
         attn = (q @ k.transpose(-2, -1)) * self.scale
         attn = attn.softmax(dim=-1)
+        #############################save qk##################################
+        save_qk = False
+
+        if save_qk and filename is not None:
+            filename = filename[0]
+            # save_file = f"layer{layer_idx}_SpaceQk.npy".format(layer_idx=layer_idx)
+            # save_dir = f"/mnt/lustre/liuzexiang/cache/Code/XVIT/videocosformer/output/xvit/qk_weights/{filename}"
+            # os.makedirs(save_dir, exist_ok=True)
+            # save_path = f"{save_dir}/{save_file}"
+            #
+            # np.save(save_path, attn[0].cpu().detach().numpy())
+
+            # save_file = f"layer{layer_idx}_q.npy".format(layer_idx=layer_idx)
+            # save_dir = f"/mnt/lustre/share_data/liuzexiang/Data/ssv2/qk_weights/ssv2_xvit/q/{filename}"
+            # os.makedirs(save_dir, exist_ok=True)
+            # save_path = f"{save_dir}/{save_file}"
+            # np.save(save_path, q[0].cpu().detach().numpy())
+            #
+            # save_file = f"layer{layer_idx}_k.npy".format(layer_idx=layer_idx)
+            # save_dir = f"/mnt/lustre/share_data/liuzexiang/Data/ssv2/qk_weights/ssv2_xvit/k/{filename}"
+            # os.makedirs(save_dir, exist_ok=True)
+            # save_path = f"{save_dir}/{save_file}"
+            # np.save(save_path, k[0].cpu().detach().numpy())
+        ###############################################################
         attn = self.attn_drop(attn)
 
         x = (attn @ v).transpose(1, 2).reshape(B, N, C)
@@ -252,8 +283,8 @@ class Block(nn.Module):
             drop=drop,
         )
 
-    def forward(self, x, num_frames):
-        x = x + self.drop_path(self.attn(self.norm1(x), num_frames))
+    def forward(self, x, num_frames, layer_idx=0, filename=None):
+        x = x + self.drop_path(self.attn(self.norm1(x), num_frames, layer_idx=layer_idx, filename=filename))
         x = x + self.drop_path(self.mlp(self.norm2(x)))
 
         return x

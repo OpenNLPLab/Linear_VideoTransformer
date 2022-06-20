@@ -11,7 +11,7 @@ import torch
 import torch.utils.data
 from fvcore.common.file_io import PathManager
 from PIL import Image
-
+from petrel_client.client import Client
 from . import image_decoder as image_decoder
 from . import utils as utils
 from . import video_container as container
@@ -80,6 +80,8 @@ class Ssv2(torch.utils.data.Dataset):
         self._construct_loader()
         self._construct_augmentations()
 
+        self.mclient = Client(enable_mc=True)
+        self.use_ceph = True
     def _construct_augmentations(self):
         self.random_erasing = (
             RandomErasing(probability=self.cfg.DATA.RAND_CROP, syncronized=True)
@@ -263,9 +265,17 @@ class Ssv2(torch.utils.data.Dataset):
                 self.h5_file = h5py.File(single_h5, "r")
             video_binary = self.h5_file[hdf5_video_key]
         else:
-            video_binary = h5py.File(self._path_to_videos[index], "r")[
-                hdf5_video_key
-            ]
+            if self.use_ceph:
+                h5_file_name = self._path_to_videos[index].split('/')[-1]
+                value = self.mclient.Get(f's3://mmg_data_cv/ss_v2_h5/{h5_file_name}')
+                value_buf = io.BytesIO(value)
+                video_binary = h5py.File(value_buf)[
+                    hdf5_video_key
+                ]
+            else:
+                video_binary = h5py.File(self._path_to_videos[index], "r")[
+                    hdf5_video_key
+                ]
 
         label = self._labels[index]
 
@@ -311,7 +321,7 @@ class Ssv2(torch.utils.data.Dataset):
 
         seq = torch.tensor(seq)
         frames = utils.pack_pathway_output(self.cfg, frames, seq)
-        return frames, label, index, {}
+        return frames, label, index, {}, hdf5_video_key
 
     def __len__(self):
         """
