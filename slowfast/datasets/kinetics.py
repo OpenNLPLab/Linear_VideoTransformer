@@ -83,8 +83,8 @@ class Kinetics(torch.utils.data.Dataset):
             self.use_hdf5 = True
             self.use_ceph = True
         elif self.mode in ["test"]:
-            self.use_hdf5 = False
-            self.use_ceph = False
+            self.use_hdf5 = True
+            self.use_ceph = True
             self._num_clips = (
                 cfg.TEST.NUM_ENSEMBLE_VIEWS * cfg.TEST.NUM_SPATIAL_CROPS
             )

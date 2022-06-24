@@ -424,19 +424,18 @@ class LinearAttention(nn.Module):
             q_ = self.orpe(q_)
             k_ = self.orpe(k_)
         #############################save qk##################################
-        # if save_qk:
-        #     q_tmp = rearrange(q_, 'b n h e -> b h n e')
-        #     k_tmp = rearrange(k_, 'b n h e -> b h n e')
-        #     qk_weights = torch.einsum('bhnd,bhmd->bhnm', q_tmp, k_tmp)
-        #     denorm = torch.sum(qk_weights, dim=-1, keepdim=True)
-        #     qk_weights = qk_weights / denorm
-        #     i = 0
-        #     filename = filename[0]
-        #     save_file = f"layer{layer_idx}_SpaceQk.npy".format(layer_idx=layer_idx)
-        #     save_dir = f"/mnt/lustre/liuzexiang/cache/Code/XVIT/videocosformer/output/ssv2_63.95/qk_weights/{filename}"
-        #     os.makedirs(save_dir, exist_ok=True)
-        #     save_path = f"{save_dir}/{save_file}"
-        #     np.save(save_path, qk_weights[0].cpu().detach().numpy())
+        if save_qk:
+            q_tmp = rearrange(q_, 'b n h e -> b h n e')
+            k_tmp = rearrange(k_, 'b n h e -> b h n e')
+            qk_weights = torch.einsum('bhnd,bhmd->bhnm', q_tmp, k_tmp)
+            denorm = torch.sum(qk_weights, dim=-1, keepdim=True)
+            qk_weights = qk_weights / denorm
+            filename = filename[0]
+            save_file = f"layer{layer_idx}_SpaceQk.npy".format(layer_idx=layer_idx)
+            save_dir = f"/mnt/lustre/share_data/liuzexiang/Data/ssv2/qk_weights/ssv2_57.74/qk_matrix/{filename}"
+            os.makedirs(save_dir, exist_ok=True)
+            save_path = f"{save_dir}/{save_file}"
+            np.save(save_path, qk_weights[0].cpu().detach().numpy())
         ###############################################################
         ##### compute
         d_min = 1e-4
