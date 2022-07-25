@@ -53,6 +53,18 @@ default_cfgs = {
             mean=(0.5, 0.5, 0.5),
             std=(0.5, 0.5, 0.5),
         ),
+    "lvit_v2_base_patch16_224_in21k": _cfg(
+                url="https://github.com/rwightman/pytorch-image-models/releases/download/v0.1-lvitjx/lvit_v2_base_in21k.pth",
+                num_classes=21843,
+                mean=(0.5, 0.5, 0.5),
+                std=(0.5, 0.5, 0.5),
+            ),
+    "lvit_v2_base_patch16_224_in21k_finetune1k": _cfg(
+                url="https://github.com/rwightman/pytorch-image-models/releases/download/v0.1-lvitjx/lvit_v2_base_in21k_finetune300k.pth",
+                num_classes=1000,
+                mean=(0.5, 0.5, 0.5),
+                std=(0.5, 0.5, 0.5),
+            ),
 }
 
 class OverlapPatchEmbed3D(nn.Module):
@@ -228,7 +240,8 @@ class LinearChangeVisionTransformer(nn.Module):
         attention_type='full_time_space',
         use_3d=False,
         use_cgate=False,
-        save_qk=False
+        save_qk=False,
+        use_motion=False
     ):
         """
         Args:
@@ -308,7 +321,8 @@ class LinearChangeVisionTransformer(nn.Module):
                     attention_type=attention_type,
                     insert_control_point=True,
                     use_cgate=use_cgate,
-                    save_qk=save_qk
+                    save_qk=save_qk,
+                    use_motion=use_motion
                 )
                 for i in range(depth)
             ]
@@ -335,7 +349,9 @@ class LinearChangeVisionTransformer(nn.Module):
             if num_classes > 0
             else nn.Identity()
         )
-
+        self.seq_pool = False
+        if self.seq_pool:
+            self.attention_pool = nn.Linear(self.num_features, 1)
         #trunc_normal_(self.pos_embed, std=0.02)
         #trunc_normal_(self.cls_token, std=0.02)
         self.apply(self._init_weights)
@@ -348,6 +364,18 @@ class LinearChangeVisionTransformer(nn.Module):
         elif isinstance(m, nn.LayerNorm):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
+        # elif isinstance(m, nn.Conv2d):
+        #     fan_out = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+        #     fan_out //= m.groups
+        #     m.weight.data.normal_(0, math.sqrt(2.0 / fan_out))
+        #     if m.bias is not None:
+        #         m.bias.data.zero_()
+        # elif isinstance(m, nn.Conv1d):
+        #     fan_out = m.kernel_size[0] * m.out_channels
+        #     fan_out //= m.groups
+        #     m.weight.data.normal_(0, math.sqrt(2.0 / fan_out))
+        #     if m.bias is not None:
+        #         m.bias.data.zero_()
 
     @torch.jit.ignore
     def no_weight_decay(self):
@@ -428,7 +456,11 @@ class LinearChangeVisionTransformer(nn.Module):
         # B, N, E
         x = self.head(x)
         # print(x.shape)
-        return x.mean(dim=1)
+        if self.seq_pool:
+            x = torch.matmul(F.softmax(self.attention_pool(x), dim=1).transpose(-1, -2), x).squeeze(-2)
+        else:
+            x = x.mean(dim=1)
+        return x
 
 
 def resize_pos_embed(posemb, posemb_new):
@@ -522,6 +554,19 @@ def lvit_v2_base_patch16_224(pretrained=False, **kwargs):
     return model
 
 @register_model
+def lvit_v2_base_patch16_224_in21k(pretrained=False, **kwargs):
+    """ lvit-Base (lvit-B/16) from original paper (https://arxiv.org/abs/2010.11929).
+    ImageNet-1k weights fine-tuned from in21k @ 224x224, source https://github.com/google-research/vision_transformer.
+    """
+    model_kwargs = dict(
+        patch_size=16, embed_dim=512, depth=12, num_heads=8, has_kv=False, stride=14, **kwargs
+    )
+    model = _create_vision_transformer(
+        "lvit_v2_base_patch16_224_in21k", pretrained=pretrained, **model_kwargs
+    )
+    return model
+
+@register_model
 def lvit_v2_base_768_patch16_224(pretrained=False, **kwargs):
     """ lvit-Base (lvit-B/16) from original paper (https://arxiv.org/abs/2010.11929).
     ImageNet-1k weights fine-tuned from in21k @ 224x224, source https://github.com/google-research/vision_transformer.
@@ -531,6 +576,19 @@ def lvit_v2_base_768_patch16_224(pretrained=False, **kwargs):
     )
     model = _create_vision_transformer(
         "lvit_v2_base_768_patch16_224", pretrained=pretrained, **model_kwargs
+    )
+    return model
+
+@register_model
+def lvit_v2_base_patch16_224_in21k_finetune1k(pretrained=False, **kwargs):
+    """ lvit-Base (lvit-B/16) from original paper (https://arxiv.org/abs/2010.11929).
+    ImageNet-1k weights fine-tuned from in21k @ 224x224, source https://github.com/google-research/vision_transformer.
+    """
+    model_kwargs = dict(
+        patch_size=16, embed_dim=512, depth=12, num_heads=8, has_kv=False, stride=14, **kwargs
+    )
+    model = _create_vision_transformer(
+        "lvit_v2_base_patch16_224_in21k_finetune1k", pretrained=pretrained, **model_kwargs
     )
     return model
 ####################

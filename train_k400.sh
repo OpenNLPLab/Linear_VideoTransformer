@@ -4,7 +4,7 @@ GPU=$1
 CPU=5
 
 
-spring.submit run -p MMG --quotatype=auto --job-name=python --gres=gpu:$GPU --gpu -n$GPU --cpus-per-task $CPU  \
+spring.submit run -p MMG --quotatype=auto --job-name=python --ntasks-per-node 8 --gpu -n$GPU --cpus-per-task $CPU  \
 "
 python tools/slurmRunNet.py \
   --cfg configs/Kinetics/lxvitv2_B16_16x16_k400.yaml --port 22235 \

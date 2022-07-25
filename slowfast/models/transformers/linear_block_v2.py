@@ -303,13 +303,16 @@ class LinearAttention(nn.Module):
             householder_learned=False,
             orpe_dim=1,
             use_cgate=False,
+            attn='spatial',
+            use_conv=False
     ):
         super().__init__()
         self.num_heads = num_heads
         head_dim = dim // num_heads
         self.insert_control_point = insert_control_point
         self.scale = qk_scale or head_dim ** -0.5
-
+        self.attn = attn
+        self.use_conv = use_conv
         self.scale = head_dim ** -0.5
 
         self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
@@ -329,6 +332,12 @@ class LinearAttention(nn.Module):
             self.control_point = AfterReconstruction(dim)
             self.control_point_query = AfterReconstruction(dim)
             self.control_point_value = AfterReconstruction(dim)
+            if attn == 'spatial' and use_conv:
+                self.k_conv = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)
+                self.v_conv = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)
+            elif attn == 'temporal' and use_conv:
+                self.k_conv = nn.Conv1d(64, 64, kernel_size=3, stride=1, padding=1)
+                self.v_conv = nn.Conv1d(64, 64, kernel_size=3, stride=1, padding=1)
         if self.use_orpe:
             print("===================")
             print("use_orpe")
@@ -364,6 +373,27 @@ class LinearAttention(nn.Module):
             v = rearrange(v, 'b n h e -> b h n e')
             k = self.control_point_query(k)
             v = self.control_point_value(v)
+
+            if self.attn == 'temporal' and self.use_conv:
+                k = rearrange(k, 'b h n e -> (b h) e n')
+                v = rearrange(v, 'b h n e -> (b h) e n')
+                k = self.k_conv(k)
+                v = self.v_conv(v)
+                k = rearrange(k, '(b h) e n -> b h n e', h=self.num_heads)
+                v = rearrange(v, '(b h) e n -> b h n e', h=self.num_heads)
+            if self.attn == 'spatial' and self.use_conv:
+                k = rearrange(k, 'b h n e -> (b h) e n')
+                v = rearrange(v, 'b h n e -> (b h) e n')
+                k = rearrange(k, 'bh e (H W) -> bh e H W', H=17)
+                v = rearrange(v, 'bh e (H W) -> bh e H W', H=17)
+
+                k = self.k_conv(k)
+                v = self.v_conv(v)
+
+                k = rearrange(k, 'bh e H W -> bh e (H W)', H=17)
+                v = rearrange(v, 'bh e H W -> bh e (H W)', H=17)
+                k = rearrange(k, '(b h) e n -> b h n e', h=self.num_heads)
+                v = rearrange(v, '(b h) e n -> b h n e', h=self.num_heads)
             k = rearrange(k, 'b h n e -> b n h e')
             v = rearrange(v, 'b h n e -> b n h e')
         #################shift before cgate#################
@@ -489,11 +519,13 @@ class LinearBlock(nn.Module):
             insert_control_point=False,
             share_ts_params=False,
             use_cgate=False,
-            save_qk=False
+            save_qk=False,
+            use_motion=False
     ):
         super().__init__()
         self.share_ts_params = share_ts_params
         self.save_qk = save_qk
+        self.use_motion = use_motion
         self.norm1 = norm_layer(dim)
         self.attention_type = attention_type
         if self.attention_type == 'full_time_space':
@@ -568,9 +600,33 @@ class LinearBlock(nn.Module):
                     householder_learned=householder_learned,
                     orpe_dim=orpe_dim,
                     insert_control_point=insert_control_point,
-                    use_cgate=use_cgate
+                    use_cgate=use_cgate,
+                    attn='temporal'
                 )
                 #self.temporal_fc = nn.Linear(dim, dim)
+                #######motion attention################
+                if self.use_motion:
+                    self.motion_norm1 = norm_layer(dim)
+                    self.motion_attn = LinearAttention(
+                        dim,
+                        num_heads=num_heads,
+                        qkv_bias=qkv_bias,
+                        qk_scale=qk_scale,
+                        attn_drop=attn_drop,
+                        proj_drop=drop,
+                        # ADD FOR ORPE
+                        use_orpe=use_orpe,
+                        core_matrix=core_matrix,
+                        p_matrix=p_matrix,
+                        theta_type=theta_type,
+                        theta_learned=theta_learned,
+                        householder_learned=householder_learned,
+                        orpe_dim=orpe_dim,
+                        insert_control_point=insert_control_point,
+                        use_cgate=use_cgate,
+                        attn='motion'
+                    )
+
         elif self.attention_type == 'xvit':
             self.attn = Attention(
                 dim,
@@ -619,6 +675,15 @@ class LinearBlock(nn.Module):
             xt = x
             BT, S, E = xt.shape
             B = BT//T
+            if self.use_motion:
+                x_motion = x
+                x_motion_ = rearrange(x_motion, '(b t) (h w) m -> b t (h w) m', b=B, h=H, w=W, t=T)
+                x_motion_sub = x_motion_[:, 1:, :, :] - x_motion_[:, :-1, :, :]
+                x_motion_sub = rearrange(x_motion_sub, 'b t S m -> (b t) S m')
+                res_motion_ = self.drop_path(self.motion_attn(self.motion_norm1(x_motion_sub)))
+                last_motion = torch.zeros((B, 1, H*W, E)).to(res_motion_.device)
+                res_motion_ = rearrange(res_motion_, '(b t) S m -> b t S m', b=B, t=T-1)
+                res_motion = torch.cat((res_motion_, last_motion), dim=1)
             ## Temporal
             xt_ = rearrange(xt, '(b t) (h w) m -> b t (h w) m', b=B, h=H, w=W, t=T)
             xt_ = xt_.transpose(1, 2)
@@ -662,6 +727,8 @@ class LinearBlock(nn.Module):
             # x = torch.cat((init_cls_token, x), 1) + torch.cat((cls_token, res), 1)
             x = x+res
             x = rearrange(x, 'b (h w t) m -> b (h w) t m', b=B, h=H, w=W, t=T).transpose(1, 2)
+            if self.use_motion:
+                x = x + res_motion
             x = rearrange(x, 'b t (h w) m -> (b t) (h w) m', b=B, h=H, w=W, t=T)
             x = x + self.drop_path(self.mlp(self.norm2(x), H, W))
             #x = rearrange(x, '(b t) (h w) m -> b (t h w) m', b=B, h=H, w=W, t=T)
