@@ -12,8 +12,8 @@ from torch import einsum
 from torch import nn as nn
 from einops import rearrange
 #from .orpe import Orpe
-
-
+from .orthoformer import orthoformer
+from .transformer_block import Attention
 class AfterReconstruction(nn.Identity):
     def __init__(self, inplanes):
         super().__init__()
@@ -303,10 +303,13 @@ class LinearAttention(nn.Module):
             householder_learned=False,
             orpe_dim=1,
             use_cgate=False,
+            share_gate=True,
             attn='spatial',
-            use_conv=False
+            use_conv=False,
+            linear_type='relu'
     ):
         super().__init__()
+        self.linear_type = linear_type
         self.num_heads = num_heads
         head_dim = dim // num_heads
         self.insert_control_point = insert_control_point
@@ -321,10 +324,13 @@ class LinearAttention(nn.Module):
         self.proj_drop = nn.Dropout(proj_drop)
         ############gate reweighting########
         self.use_cgate = use_cgate
+        self.share_gate = share_gate
         if use_cgate:
-            # self.q_gate = nn.Linear(head_dim, head_dim)
-            # self.k_gate = nn.Linear(head_dim, head_dim)
-            self.pgate = nn.Linear(2*head_dim, head_dim)
+            if not share_gate:
+                self.q_gate = nn.Linear(3*head_dim, head_dim)
+                self.k_gate = nn.Linear(3*head_dim, head_dim)
+            else:
+                self.pgate = nn.Linear(3*head_dim, head_dim)
         # self.layer_norm = nn.LayerNorm(dim)
         # self.layer_norm = nn.LayerNorm(head_dim)
         self.use_orpe = use_orpe
@@ -371,8 +377,10 @@ class LinearAttention(nn.Module):
         if self.insert_control_point and execute:
             k = rearrange(k, 'b n h e -> b h n e')
             v = rearrange(v, 'b n h e -> b h n e')
+            #q = rearrange(q, 'b n h e -> b h n e')
             k = self.control_point_query(k)
             v = self.control_point_value(v)
+            #q = self.control_point_value(q)
 
             if self.attn == 'temporal' and self.use_conv:
                 k = rearrange(k, 'b h n e -> (b h) e n')
@@ -396,14 +404,20 @@ class LinearAttention(nn.Module):
                 v = rearrange(v, '(b h) e n -> b h n e', h=self.num_heads)
             k = rearrange(k, 'b h n e -> b n h e')
             v = rearrange(v, 'b h n e -> b n h e')
+            #q = rearrange(q, 'b h n e -> b n h e')
         #################shift before cgate#################
         e = q.shape[-1]
         # act
         eps = 1e-6
-        q_ = F.relu(q) + self.scale
-        k_ = F.relu(k) + self.scale
+        if self.linear_type == 'relu':
+            q_ = F.relu(q) + self.scale
+            k_ = F.relu(k) + self.scale
+        else:
+            q_ = q
+            k_ = k
+            v_ = v
         if self.use_cgate:
-            qk = torch.cat([q_, k_], 3)
+            qk = torch.cat([q_, k_, v], 3)
             # gate = F.sigmoid(self.q_gate(q_))
             # if save_qk:
             #     filename = filename[0]
@@ -419,11 +433,13 @@ class LinearAttention(nn.Module):
             #     os.makedirs(save_dir, exist_ok=True)
             #     save_path = f"{save_dir}/{save_file}"
             #     np.save(save_path, k_.transpose(1, 2)[0].cpu().detach().numpy())
+            if not self.share_gate:
+                q_ = F.sigmoid(self.q_gate(qk)) * q_
+                k_ = F.sigmoid(self.k_gate(qk)) * k_
+            else:
+                q_ = F.sigmoid(self.pgate(qk)) * q_
+                k_ = F.sigmoid(self.pgate(qk)) * k_
 
-            q_ = F.sigmoid(self.pgate(qk)) * q_
-            k_ = F.sigmoid(self.pgate(qk)) * k_
-            # q_ = F.sigmoid(self.q_gate(q_)) * q_
-            # k_ = F.sigmoid(self.k_gate(k_)) * k_
             q_ = self.attn_drop(q_)
             k_ = self.attn_drop(k_)
             #############################save qk##################################
@@ -441,6 +457,26 @@ class LinearAttention(nn.Module):
             #     save_path = f"{save_dir}/{save_file}"
             #     np.save(save_path, k_.transpose(1, 2)[0].cpu().detach().numpy())
             ###############################################################
+        if self.linear_type == 'orthoformer':
+            q_ = rearrange(q_, 'b n h e -> (b h) n e')
+            k_ = rearrange(k_, 'b n h e -> (b h) n e')
+            v_ = rearrange(v_, 'b n h e -> (b h) n e')
+            attn_output = orthoformer(q_, k_, v_)
+            attn_output = rearrange(attn_output, '(b h) n d -> b n (h d)', h=self.num_heads)
+            attn_output = self.proj(attn_output)
+            attn_output = self.proj_drop(attn_output)
+        if self.linear_type == 'softmax':
+            q_ = rearrange(q_, 'b n h e -> b h n e')
+            k_ = rearrange(k_, 'b n h e -> b h n e')
+            v_ = rearrange(v_, 'b n h e -> b h n e')
+            attn = (q_ @ k_.transpose(-2, -1)) * self.scale
+            attn = attn.softmax(dim=-1)
+            attn = self.attn_drop(attn)
+
+            attn_output = (attn @ v_).transpose(1, 2)
+            attn_output = rearrange(attn_output, 'b n h e -> b n (h e)')
+            attn_output = self.proj(attn_output)
+            attn_output = self.proj_drop(attn_output)
         #################shift after cgate#################
         # if self.insert_control_point and execute:
         #     k = rearrange(k, 'b n h e -> b h n e')
@@ -450,7 +486,7 @@ class LinearAttention(nn.Module):
         #     k = rearrange(k, 'b h n e -> b n h e')
         #     v = rearrange(v, 'b h n e -> b n h e')
         #################shift after cgate#################
-        if self.use_orpe:
+        if self.use_orpe and self.linear_type == 'relu':
             q_ = self.orpe(q_)
             k_ = self.orpe(k_)
         #############################save qk##################################
@@ -467,29 +503,31 @@ class LinearAttention(nn.Module):
             save_path = f"{save_dir}/{save_file}"
             np.save(save_path, qk_weights[0].cpu().detach().numpy())
         ###############################################################
+
         ##### compute
-        d_min = 1e-4
-        d_max = 1e4
-        # b h n e, b h e n -> b h e e
-        kv_ = torch.matmul(rearrange(k_, 'b n h e -> b h e n'),
-                           rearrange(v, 'b n h e -> b h n e'))
-        # add
-        # kv_ = torch.clamp(kv_, d_min, d_max)
-        k_sum = torch.sum(k_, axis=1, keepdim=True)  # no einsum
-        z_ = 1 / (torch.sum(torch.mul(q_, k_sum), axis=-1) + eps)  # no einsum
-        # add
-        # z_ = torch.clamp(z_, d_min, d_max)
+        if self.linear_type == 'relu':
+            d_min = 1e-4
+            d_max = 1e4
+            # b h n e, b h e n -> b h e e
+            kv_ = torch.matmul(rearrange(k_, 'b n h e -> b h e n'),
+                               rearrange(v, 'b n h e -> b h n e'))
+            # add
+            # kv_ = torch.clamp(kv_, d_min, d_max)
+            k_sum = torch.sum(k_, axis=1, keepdim=True)  # no einsum
+            z_ = 1 / (torch.sum(torch.mul(q_, k_sum), axis=-1) + eps)  # no einsum
+            # add
+            # z_ = torch.clamp(z_, d_min, d_max)
 
-        #### 计算qkv会产生较大的值
-        # b h n e, b h e e -> b h n e -> b n h e
-        attn_output = torch.matmul(q_.transpose(1, 2), kv_).transpose(1, 2)
-        attn_output = torch.mul(attn_output, z_.unsqueeze(-1))
-        # attn_output = torch.clamp(attn_output, d_min, d_max)
+            #### 计算qkv会产生较大的值
+            # b h n e, b h e e -> b h n e -> b n h e
+            attn_output = torch.matmul(q_.transpose(1, 2), kv_).transpose(1, 2)
+            attn_output = torch.mul(attn_output, z_.unsqueeze(-1))
+            # attn_output = torch.clamp(attn_output, d_min, d_max)
 
-        # outprojection
-        attn_output = rearrange(attn_output, 'b n h e -> b n (h e)')
-        attn_output = self.proj(attn_output)
-        attn_output = self.proj_drop(attn_output)
+            # outprojection
+            attn_output = rearrange(attn_output, 'b n h e -> b n (h e)')
+            attn_output = self.proj(attn_output)
+            attn_output = self.proj_drop(attn_output)
 
         return attn_output
 
@@ -519,8 +557,10 @@ class LinearBlock(nn.Module):
             insert_control_point=False,
             share_ts_params=False,
             use_cgate=False,
+            share_gate=True,
             save_qk=False,
-            use_motion=False
+            use_motion=False,
+            linear_type='relu'
     ):
         super().__init__()
         self.share_ts_params = share_ts_params
@@ -563,6 +603,7 @@ class LinearBlock(nn.Module):
                     householder_learned=householder_learned,
                     orpe_dim=orpe_dim,
                     insert_control_point=insert_control_point,
+                    linear_type=linear_type
                 )
             else:
                 self.attn = LinearAttention(
@@ -581,7 +622,9 @@ class LinearBlock(nn.Module):
                     householder_learned=householder_learned,
                     orpe_dim=orpe_dim,
                     insert_control_point=insert_control_point,
-                    use_cgate=use_cgate
+                    use_cgate=use_cgate,
+                    share_gate=share_gate,
+                    linear_type=linear_type
                 )
                 self.temporal_norm1 = norm_layer(dim)
                 self.temporal_attn = LinearAttention(
@@ -601,7 +644,9 @@ class LinearBlock(nn.Module):
                     orpe_dim=orpe_dim,
                     insert_control_point=insert_control_point,
                     use_cgate=use_cgate,
-                    attn='temporal'
+                    share_gate=share_gate,
+                    attn='temporal',
+                    linear_type=linear_type
                 )
                 #self.temporal_fc = nn.Linear(dim, dim)
                 #######motion attention################
@@ -624,7 +669,8 @@ class LinearBlock(nn.Module):
                         orpe_dim=orpe_dim,
                         insert_control_point=insert_control_point,
                         use_cgate=use_cgate,
-                        attn='motion'
+                        attn='motion',
+                        linear_type=linear_type
                     )
 
         elif self.attention_type == 'xvit':

@@ -40,8 +40,10 @@ _C.USE_LINEARv1 = False
 _C.ATTENTION_TYPE = 'full_time_space'
 _C.USE_3D = False
 _C.USE_CGATE = False
+_C.SHARE_GATE = True
 _C.SAVE_QK = False
 _C.USE_MOTION = False
+_C.LINEAR_TYPE = 'relu'
 
 # ---------------------------------------------------------------------------- #
 # Training options.

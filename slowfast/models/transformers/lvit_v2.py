@@ -241,7 +241,9 @@ class LinearChangeVisionTransformer(nn.Module):
         use_3d=False,
         use_cgate=False,
         save_qk=False,
-        use_motion=False
+        use_motion=False,
+        linear_type='relu',
+        share_gate=True
     ):
         """
         Args:
@@ -322,7 +324,9 @@ class LinearChangeVisionTransformer(nn.Module):
                     insert_control_point=True,
                     use_cgate=use_cgate,
                     save_qk=save_qk,
-                    use_motion=use_motion
+                    use_motion=use_motion,
+                    linear_type=linear_type,
+                    share_gate=share_gate,
                 )
                 for i in range(depth)
             ]

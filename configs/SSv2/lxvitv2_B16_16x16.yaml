@@ -1,7 +1,7 @@
 TRAIN:
-  ENABLE: True
+  ENABLE: False
   DATASET: ssv2
-  BATCH_SIZE: 64
+  BATCH_SIZE: 32
   EVAL_PERIOD: 1
   CHECKPOINT_PERIOD: 1
   AUTO_RESUME: True
@@ -27,7 +27,7 @@ TEMPORAL_HEAD:
   HIDDEN_DIM: 512
   NUM_ATTENTION_HEADS: 8
 XVIT:
-  BASE_MODEL: lvit_v2_base_patch16_224
+  BASE_MODEL: lvit_v2_base_patch16_224_in21k_finetune1k
   CONSENSUS_TYPE: 'vit'
   USE_XVIT: True
   USE_SpatialShift: True
@@ -74,14 +74,16 @@ TEST:
   DATASET: ssv2
   BATCH_SIZE: 32
   NUM_ENSEMBLE_VIEWS: 2
+  NUM_SPATIAL_CROPS: 3
 DATA_LOADER:
   NUM_WORKERS: 8
   PIN_MEMORY: True
 NUM_GPUS: 8
 NUM_SHARDS: 1
 RNG_SEED: 0
-OUTPUT_DIR: output/lv2_dts_vvt_St_Ts_gate/
+OUTPUT_DIR: output/ablation_ssv2/flops
 ATTENTION_TYPE: divided_time_space
 USE_3D: False
 USE_CGATE: True
 SAVE_QK: False
+LINEAR_TYPE: relu

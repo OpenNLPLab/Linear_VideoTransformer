@@ -2,7 +2,7 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 
 """Multi-view test a video classification model."""
-
+import time
 import os
 import pickle
 import pdb
@@ -45,7 +45,7 @@ def perform_test(test_loader, model, test_meter, cfg, writer=None):
     # Enable eval mode.
     model.eval()
     test_meter.iter_tic()
-
+    start_time = time.perf_counter()
     for cur_iter, (inputs, labels, video_idx, meta, filename) in enumerate(test_loader):
         if cfg.NUM_GPUS:
             # Transfer the data to the current GPU device.
@@ -90,7 +90,9 @@ def perform_test(test_loader, model, test_meter, cfg, writer=None):
             test_meter.log_iter_stats(cur_iter)
 
         test_meter.iter_tic()
-
+    end_time = time.perf_counter()
+    time_gap = end_time - start_time
+    logger.info(f' Total test time: {time_gap} s')
     # Log epoch stats and print the final testing results.
     all_preds = test_meter.video_preds.clone().detach()
     all_labels = test_meter.video_labels

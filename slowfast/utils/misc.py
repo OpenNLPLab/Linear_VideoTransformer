@@ -18,6 +18,7 @@ from matplotlib import pyplot as plt
 from slowfast.datasets.utils import pack_pathway_output
 from slowfast.models.batchnorm_helper import SubBatchNorm3d
 from torch import nn
+from fvcore.nn.flop_count import flop_count
 
 logger = logging.get_logger(__name__)
 
@@ -131,18 +132,19 @@ def get_model_stats(model, cfg, mode, use_train_input):
         float: the total number of count of the given model.
     """
     assert mode in [
-        "activation"
+        "activation", 'flop'
     ], "'{}' not supported for model analysis".format(mode)
     if mode == "activation":
         model_stats_fun = activation_count
-
+    elif mode == "flop":
+        model_stats_fun = flop_count
     # Set model to evaluation mode for analysis.
     # Evaluation mode can avoid getting stuck with sync batchnorm.
     model_mode = model.training
     model.eval()
-    # inputs = _get_model_analysis_input(cfg, use_train_input)
-    # count_dict, *_ = model_stats_fun(model, inputs)
-    count = 0  # sum(count_dict.values())
+    inputs = _get_model_analysis_input(cfg, use_train_input)
+    count_dict, *_ = model_stats_fun(model, inputs)
+    count = sum(count_dict.values())
     model.train(model_mode)
     return count
 
@@ -164,6 +166,11 @@ def log_model_info(model, cfg, use_train_input=True):
     logger.info(
         "Activations: {:,} M".format(
             get_model_stats(model, cfg, "activation", use_train_input)
+        )
+    )
+    logger.info(
+        "Flops: {:,} G".format(
+            get_model_stats(model, cfg, "flop", use_train_input)
         )
     )
     logger.info("nvidia-smi")

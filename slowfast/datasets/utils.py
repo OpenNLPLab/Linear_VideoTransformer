@@ -35,8 +35,8 @@ def retry_load_images(image_paths, retry=10, backend="pytorch"):
             with g_pathmgr.open(image_path, "rb") as f:
                 img_str = np.frombuffer(f.read(), np.uint8)
                 img = cv2.imdecode(img_str, flags=cv2.IMREAD_COLOR)
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             imgs.append(img)
-
         if all(img is not None for img in imgs):
             if backend == "pytorch":
                 imgs = torch.as_tensor(np.stack(imgs))

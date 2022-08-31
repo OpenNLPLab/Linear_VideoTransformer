@@ -325,7 +325,10 @@ class Kinetics(torch.utils.data.Dataset):
                 frames = None
                 if self.use_ceph:
                     h5_file_name = self._path_to_videos[index].split('/')[-1]
-                    value = self.mclient.Get(f's3://mmg_data_cv/kinetics_400_h5/{h5_file_name}.h5')
+                    if 'k400' in self.cfg.DATA.PATH_TO_DATA_DIR:
+                        value = self.mclient.Get(f's3://mmg_data_cv/kinetics_400_h5/{h5_file_name}.h5')
+                    elif 'k600' in self.cfg.DATA.PATH_TO_DATA_DIR:
+                        value = self.mclient.Get(f's3://mmg_data_cv/kinetics_600_h5/{h5_file_name}.h5')
                     value_buf = io.BytesIO(value)
                     with h5py.File(value_buf) as video_h5:
                         video_key = list(video_h5.keys())[0]
@@ -438,7 +441,6 @@ class Kinetics(torch.utils.data.Dataset):
                         Image.fromarray(fmr.astype("uint8")) for fmr in frames
                     ]
                     # print('length:', len(frames))
-
                 if self.auto_augment is not None:
                     frames = self.auto_augment(frames)
                 elif self.rand_augment is not None:

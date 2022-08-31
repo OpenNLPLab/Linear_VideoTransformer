@@ -125,8 +125,10 @@ class XVIT(nn.Module):
                     attention_type=self.cfg.ATTENTION_TYPE,
                     use_3d=self.cfg.USE_3D,
                     use_cgate=self.cfg.USE_CGATE,
+                    share_gate=self.cfg.SHARE_GATE,
                     save_qk=self.cfg.SAVE_QK,
-                    use_motion=self.cfg.USE_MOTION
+                    use_motion=self.cfg.USE_MOTION,
+                    linear_type=self.cfg.LINEAR_TYPE
                 )
             else:
                 self.base_model = create_model(

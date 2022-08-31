@@ -54,7 +54,7 @@ class Attention(nn.Module):
         attn_drop=0.0,
         proj_drop=0.0,
         insert_control_point=False,
-        use_cgate=False
+        use_cgate=True
     ):
         super().__init__()
         self.num_heads = num_heads
@@ -77,7 +77,7 @@ class Attention(nn.Module):
         if use_cgate:
             # self.q_gate = nn.Linear(head_dim, head_dim)
             # self.k_gate = nn.Linear(head_dim, head_dim)
-            self.pgate = nn.Linear(2*head_dim, head_dim)
+            self.pgate = nn.Linear(3*head_dim, head_dim)
     def forward(self, x, num_frames, layer_idx=0, filename=None):
         if self.insert_control_point:
             x = self.control_point(x)
@@ -93,7 +93,7 @@ class Attention(nn.Module):
             k = self.control_point_query(k)
             v = self.control_point_value(v)
         if self.use_cgate:
-            qk = torch.cat([q, k], 3)
+            qk = torch.cat([q, k, v], 3)
             q = F.sigmoid(self.pgate(qk)) * q
             k = F.sigmoid(self.pgate(qk)) * k
         attn = (q @ k.transpose(-2, -1)) * self.scale

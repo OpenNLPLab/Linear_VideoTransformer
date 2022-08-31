@@ -6,7 +6,7 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 
 """Train a video classification model."""
-
+import random
 import pprint
 import pdb
 import utils
@@ -25,7 +25,7 @@ from fvcore.nn.precise_bn import get_bn_modules, update_bn_stats
 from slowfast.datasets import loader
 from slowfast.models import build_model
 from slowfast.utils.meters import TrainMeter, ValMeter
-
+from fvcore.nn.flop_count import flop_count
 logger = logging.get_logger(__name__)
 
 
@@ -368,6 +368,7 @@ def train(cfg):
 
     # Build the video model and print model statistics.
     model = build_model(cfg, gpu_id=cfg.local_rank)
+
     if utils.is_main_process() and cfg.LOG_MODEL_INFO:
         misc.log_model_info(model, cfg, use_train_input=True)
 
