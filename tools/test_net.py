@@ -69,6 +69,12 @@ def perform_test(test_loader, model, test_meter, cfg, writer=None):
                 else:
                     meta[key] = val.cuda(non_blocking=True)
         test_meter.data_toc()
+        if cur_iter == 999:
+            end_time = time.perf_counter()
+            time_gap = end_time - start_time
+            speed = 1000 / time_gap
+            logger.info(f'speed: {speed} videos/s')
+            break
 
         # Perform the forward pass.
         preds = model(inputs, filename=filename)

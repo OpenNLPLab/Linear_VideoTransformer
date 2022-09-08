@@ -120,6 +120,7 @@ _C.TEST.SAVE_RESULTS_PATH = ""
 _C.XVIT = CfgNode()
 
 _C.XVIT.NUM_SEGMENTS = 8
+_C.XVIT.SPATIAL_SIZE = 289
 
 _C.XVIT.CONSENSUS_TYPE = "vit"
 ####new setting

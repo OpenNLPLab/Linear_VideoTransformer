@@ -157,7 +157,7 @@ class XVIT(nn.Module):
             if self.cfg.XVIT.USE_SpatialShift:
                 make_spatial_shift(
                     self.base_model,
-                    289,
+                    self.cfg.XVIT.SPATIAL_SIZE,
                     n_div=8,
                     locations_list=self.cfg.XVIT.LOCATIONS_LIST,
                     shift_size=self.cfg.XVIT.SHIFT_SIZE,
@@ -214,7 +214,9 @@ class XVIT(nn.Module):
             base_out = base_out.view(B, F, -1)
             output = self.consensus(base_out, positional_index, self.cfg.DATA.NUM_FRAMES)
             return output
-
+        
+        if self.cfg.XVIT.CONSENSUS_TYPE == "avg":
+            return base_out
         # return base_out
         if self.reshape:
             base_out = base_out.view(
