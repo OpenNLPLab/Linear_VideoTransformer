@@ -44,7 +44,7 @@ _C.SHARE_GATE = True
 _C.SAVE_QK = False
 _C.USE_MOTION = False
 _C.LINEAR_TYPE = 'relu'
-
+_C.USE_PruneVit = False
 # ---------------------------------------------------------------------------- #
 # Training options.
 # ---------------------------------------------------------------------------- #
@@ -90,7 +90,7 @@ _C.TEST = CfgNode()
 
 # If True test the model, else skip the testing.
 _C.TEST.ENABLE = True
-
+_C.TEST.TEST_SPEED = False
 # Dataset for testing.
 _C.TEST.DATASET = "kinetics"
 

@@ -69,7 +69,7 @@ def perform_test(test_loader, model, test_meter, cfg, writer=None):
                 else:
                     meta[key] = val.cuda(non_blocking=True)
         test_meter.data_toc()
-        if cur_iter == 999:
+        if cur_iter == 999 and cfg.TEST.TEST_SPEED:
             end_time = time.perf_counter()
             time_gap = end_time - start_time
             speed = 1000 / time_gap
