@@ -215,7 +215,7 @@ class XVIT(nn.Module):
             output = self.consensus(base_out, positional_index, self.cfg.DATA.NUM_FRAMES)
             return output
         
-        if self.cfg.USE_PruneVit == "avg":
+        if self.cfg.USE_PruneVit:
             return base_out
         # return base_out
         if self.reshape:
