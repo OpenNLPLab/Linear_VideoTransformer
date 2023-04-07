@@ -44,9 +44,12 @@ sh train_charades_linear.sh
 ```
 ## Citation
 If you use this dataset or code, please consider cite following papers:
+
+```
 @article{lu2022linear,
   title={Linear Video Transformer with Feature Fixation},
   author={Lu, Kaiyue and Liu, Zexiang and Wang, Jianyuan and Sun, Weixuan and Qin, Zhen and Li, Dong and Shen, Xuyang and Deng, Hui and Han, Xiaodong and Dai, Yuchao and others},
   journal={arXiv preprint arXiv:2210.08164},
   year={2022}
 }
+```
