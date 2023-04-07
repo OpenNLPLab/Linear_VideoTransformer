@@ -1,3 +1,4 @@
+This repo is the official implementations of "Linear Video Transformer with Feature Fixation". 
 # Installation
 
 ## Install pytorch
