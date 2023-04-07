@@ -43,7 +43,7 @@ Charades:
 sh train_charades_linear.sh 
 ```
 ## Citation
-If you use this dataset or code, please consider cite following papers:
+If you use this code, please consider cite:
 
 ```
 @article{lu2022linear,
