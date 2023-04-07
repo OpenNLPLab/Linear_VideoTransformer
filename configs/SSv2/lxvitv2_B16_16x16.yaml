@@ -81,7 +81,7 @@ DATA_LOADER:
 NUM_GPUS: 8
 NUM_SHARDS: 1
 RNG_SEED: 0
-OUTPUT_DIR: output/ablation_ssv2/flops
+OUTPUT_DIR: output/ablation_ssv2/
 ATTENTION_TYPE: divided_time_space
 USE_3D: False
 USE_CGATE: True

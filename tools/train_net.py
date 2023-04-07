@@ -87,11 +87,16 @@ def train_epoch(
                 criterion=loss_fun,
                 use_cuda=True,
             )
-            inputs1, inputs2 = inputs[0], inputs[1]
-            inputs1, mixup_aux_a, mixup_aux_b, lam = mixuper.mixup_data(
-                inputs1, labels
-            )
-            inputs = [inputs1, inputs2]
+            if len(inputs) == 2:
+                inputs1, inputs2 = inputs[0], inputs[1]
+                inputs1, mixup_aux_a, mixup_aux_b, lam = mixuper.mixup_data(
+                    inputs1, labels
+                )
+                inputs = [inputs1, inputs2]
+            else:
+                inputs, mixup_aux_a, mixup_aux_b, lam = mixuper.mixup_data(
+                    inputs, labels
+                )
             preds = model(inputs)
             loss = mixuper.mixup_loss(preds, mixup_aux_a, mixup_aux_b, lam)
         else:
