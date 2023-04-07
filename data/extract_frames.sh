@@ -1,5 +1,5 @@
-video_root=/mnt/lustre/share_data/sunweixuan/video_data/somethingv2
-save_root=/mnt/lustre/liuzexiang/Data/extracted_frames
+video_root=$1
+save_root=$2
 files=$(ls $video_root | sort -n)
 for video in $files
 do

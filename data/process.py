@@ -1,5 +1,6 @@
 import json
 import io
+import sys
 import os
 import h5py
 from PIL import Image
@@ -9,8 +10,6 @@ import cv2
 from tqdm import tqdm
 from multiprocessing import Process, Queue
 
-root_dir = '/mnt/lustre/liuzexiang/Data/extracted_frames'
-save_dir = '/mnt/lustre/liuzexiang/Data/seq_h5'
 if not os.path.exists(save_dir):
     os.mkdir(save_dir)
 
@@ -85,6 +84,8 @@ def load_testLabeljson():
 
 ###  extract_frames
 if __name__ == '__main__':
+    root_dir = sys.argv[1]
+    save_dir = sys.argv[2]
     frames_dirs = os.listdir(root_dir)
     frames_dirs.sort(key=lambda frame_dir: int(frame_dir))
     process_list = []

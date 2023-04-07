@@ -1,49 +1,44 @@
-环境要求：
-1. 建议先试一下已有的环境，如果可以运行，可以省去以下的的安装新环境的麻烦。
-2. conda 创建新环境 Python = 3.8，   bash install.sh (如果不行，再进行3，每个库分别安装)
-3. (若以上两步行不通)安装新环境：
+# Installation
 
-- conda 创建新环境 Python = 3.8
-- cuda: 10.1
-- Numpy
-- PyTorch = 1.8.1 (这里下载：https://download.pytorch.org/whl/cu101/torch-1.8.1%2Bcu101-cp38-cp38-linux_x86_64.whl)
-- hdf5 (pip install h5py=3.6.0 )
-- fvcore: pip install 'git+https://github.com/facebookresearch/fvcore'
-- torchvision = 0.9.1 （这里下载：https://download.pytorch.org/whl/cu101/torchvision-0.9.1%2Bcu101-cp38-cp38-linux_x86_64.whl）
-- simplejson: pip install simplejson
-- GCC >= 4.9 
-- PyAV: conda install av -c conda-forge
-- ffmpeg (4.0 is prefereed, will be installed along with PyAV)
-- PyYaml: (will be installed along with fvcore)
-- tqdm: (will be installed along with fvcore)
-- iopath: pip install -U iopath or conda install -c iopath iopath
-- psutil: pip install psutil
-- OpenCV: pip install opencv-python
-- tensorboard: pip install tensorboard
-- PyTorchVideo: pip install pytorchvideo
-- timm = 0.4.12
-- detectron2: (这里下载： https://dl.fbaipublicfiles.com/detectron2/wheels/cu101/torch1.8/detectron2-0.6%2Bcu101-cp38-cp38-linux_x86_64.whl)
-- (以上whl文件下载了传上集群再pip install)
+## Install pytorch
 
-备注：可以使用install.sh安装(1986集群, 1024需要修改)
+```
+conda create -n video_transformer python=3.8
 
-数据路径：
+conda activate video_transformer
 
-1986集群：   
+bash install.sh
+```
+# Data pre-process
 
-/mnt/lustreold/share_data/sunweixuan/video_data (kinect400, kinect600, somethingsomething v2)
+## 1.download K400, K600 and SSv2 dataset
+## 2.extract video frames
+```
+bash data/extract_frames.sh $PATH_TO_YOUR_DATA_ROOT $PATH_TO_YOUR_SAVR_DIR
+```
+## 3.save the extraced frames in h5 format
+```
+python data/process.py $PATH_TO_YOUR_EXTRACTED_FRAMES $PATH_TO_YOUR_H5_SAVR_DIR
+```
+# Train: change config and DataPath in the shell.
 
-/mnt/lustre/share_data/sunweixuan/video_data (ava  charades  kinect700)
+K400:
+```
+sh train_k400_linear.sh 
+```
 
-1024集群：  
+K600:
+```
+sh train_k600_linear.sh 
+```
 
- /mnt/lustre/share_data/sunweixuan/video_data (somethingsomething v2)
+SSv2:
+```
+sh train_ssv2_linear.sh 
+```
 
-运行：
-
-bash train_k600.sh M3T 8 
-
-bash train_k400.sh M3T 8 
-
-在train.sh里配置对应的的yaml和数据集路径。
+Charades:
+```
+sh train_charades_linear.sh 
+```
 
